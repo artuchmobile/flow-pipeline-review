@@ -12766,7 +12766,8 @@ def concatenate_videos(
     try:
         for seq_idx, (source_idx, path, duration) in enumerate(indexed):
             norm = temp_dir / f"concat_norm_{output_path.stem}_{seq_idx:04d}.mp4"
-            if not normalize_clip_for_concat(path, norm, target_duration=duration, preserve_audio=preserve_audio):
+            normalize_clip_for_concat(path, norm, target_duration=duration, preserve_audio=preserve_audio)
+            if not is_valid_video(norm):
                 raise RuntimeError(f"normalization failed: {path.name}")
             actual = float(duration) if duration is not None else (get_duration(norm) or 0.0)
             normalized.append((source_idx, norm, actual))
