@@ -4865,13 +4865,13 @@ Example shape:
     place_hint = str((context or {}).get("setting", "the story's stated setting"))
     style_prefix = visual_style_description("video")
     fallback: list[dict[str, Any]] = []
-    for index in range(INTRO_SHOT_COUNT):
+    for index in range(shot_count):
         window = windows[index] if windows else {}
         excerpt = str(window.get("text", "") or "").strip()
         if excerpt:
             shot_core = (
                 f"Show a visually clear, literal-but-cinematic interpretation of this exact spoken narration "
-                f"for this 8-second interval: {excerpt}. Depict only the people, object, action, place, "
+                f"for this assigned narration interval: {excerpt}. Depict only the people, object, action, place, "
                 f"or relationship conveyed by these words, in {place_hint}, {era_hint}. "
                 "Do not add another event or unrelated cutaway. Use one restrained continuous action."
             )
@@ -13966,20 +13966,20 @@ async def build_intro(
             narration_words = str(text_content or "").split()
             if narration_words:
                 for window_index, window in enumerate(timed_windows):
-                    left = round(window_index * len(narration_words) / INTRO_SHOT_COUNT)
-                    right = round((window_index + 1) * len(narration_words) / INTRO_SHOT_COUNT)
+                    left = round(window_index * len(narration_words) / intro_count)
+                    right = round((window_index + 1) * len(narration_words) / intro_count)
                     window["text"] = " ".join(narration_words[left:right]).strip()
                 timed_opening_text = " ".join(
                     str(item.get("text", "") or "") for item in timed_windows
                 ).strip()
             log.warning(
                 "[Intro Alignment] Whisper timestamps unavailable; using ordered text chunks as a degraded fallback. "
-                "Exact 8-second phrase synchronization cannot be guaranteed in this fallback mode."
+                "Exact Whisper-word synchronization cannot be guaranteed in this fallback mode."
             )
         else:
             log.info(
-                "[Intro Alignment] Создаю 8 shot-промптов по реальным Whisper-таймкодам; "
-                "каждый клип привязан к своей 8-секундной фразе озвучки."
+                "[Intro Alignment] Создаю %s shot-промптов по реальным Whisper-таймкодам; "
+                "каждый клип привязан к своему сохранённому временному окну озвучки."
             )
         new_prompts = generate_intro_storyboard_gemini(
             timed_opening_text, chars, ctx, target_lang=target_lang, timed_windows=timed_windows
@@ -14531,7 +14531,7 @@ def archive_and_reset_for_language_change(state: ProjectState, new_lang: str) ->
     intro["clip_durations"] = []
     intro["actual_duration"] = 0.0
     intro["done"] = False
-    intro["output"] = str(state.media_dir / "intro_64s.mp4")
+    intro["output"] = str(state.media_dir / "intro_floating.mp4")
     state.data["main_clips"] = []
     state.data["scene_plan"] = []
     state.data["timing"] = {"intro_duration": 0.0, "audio_duration": 0.0, "main_timeline_start": 0.0, "timeline_signature": ""}
