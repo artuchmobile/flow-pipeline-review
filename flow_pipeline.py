@@ -12712,7 +12712,7 @@ def add_audio_to_video(
             "-i", str(music_path), "-filter_complex", filter_complex,
             "-map", "0:v:0", "-map", "[a]", "-c:v", "copy", "-c:a", "aac",
             "-ar", "44100", "-b:a", "192k", "-ac", "2", "-t", duration, "-shortest",
-            "-movflags", "+faststart", *FFMPEG_CLEAN_META_AV, str(temp),
+            "-movflags", "+frag_keyframe+empty_moov+default_base_moof", *FFMPEG_CLEAN_META_AV, str(temp),
         ]
     elif has_source_audio:
         filter_complex = (
@@ -12725,7 +12725,7 @@ def add_audio_to_video(
             "-filter_complex", filter_complex,
             "-map", "0:v:0", "-map", "[a]", "-c:v", "copy", "-c:a", "aac",
             "-ar", "44100", "-b:a", "192k", "-ac", "2", "-t", duration, "-shortest",
-            "-movflags", "+faststart", *FFMPEG_CLEAN_META_AV, str(temp),
+            "-movflags", "+frag_keyframe+empty_moov+default_base_moof", *FFMPEG_CLEAN_META_AV, str(temp),
         ]
     elif use_music:
         music_gain = round(random.uniform(*MUSIC_VOLUME_RANGE), 3)
@@ -12739,7 +12739,7 @@ def add_audio_to_video(
             "-i", str(music_path), "-filter_complex", filter_complex,
             "-map", "0:v:0", "-map", "[a]", "-c:v", "copy", "-c:a", "aac",
             "-ar", "44100", "-b:a", "192k", "-ac", "2", "-t", duration, "-shortest",
-            "-movflags", "+faststart", *FFMPEG_CLEAN_META_AV, str(temp),
+            "-movflags", "+frag_keyframe+empty_moov+default_base_moof", *FFMPEG_CLEAN_META_AV, str(temp),
         ]
     else:
         filter_complex = voice_chain
@@ -12748,7 +12748,7 @@ def add_audio_to_video(
             "-filter_complex", filter_complex,
             "-map", "0:v:0", "-map", "[voice]", "-c:v", "copy", "-c:a", "aac",
             "-ar", "44100", "-b:a", "192k", "-ac", "2", "-t", duration, "-shortest",
-            "-movflags", "+faststart", *FFMPEG_CLEAN_META_AV, str(temp),
+            "-movflags", "+frag_keyframe+empty_moov+default_base_moof", *FFMPEG_CLEAN_META_AV, str(temp),
         ]
 
     ffmpeg_log = output_path.with_suffix(".audio_mix_ffmpeg.log")
