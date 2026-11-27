@@ -12479,7 +12479,7 @@ def has_audio_stream(path: Path) -> bool:
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=30,
         )
         return bool(result.stdout.strip())
@@ -12530,7 +12530,7 @@ def _is_native_fhd_h264(path: Path, target_duration: float | None = None) -> boo
                 "-of", "json", str(path),
             ],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            text=True, timeout=30, check=True,
+            text=True, encoding="utf-8", errors="replace", timeout=30, check=True,
         )
         streams = json.loads(result.stdout).get("streams", [])
         if not streams:
@@ -12807,7 +12807,7 @@ def _run_concat_demuxer_with_fallback(
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
+                text=True, encoding="utf-8", errors="replace",
                 errors="replace",
                 timeout=timeout,
             )
@@ -13348,7 +13348,7 @@ def add_subtitles_to_video(
         for strategy_name, cmd in strategies:
             try:
                 result = subprocess.run(
-                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
                     encoding="utf-8", errors="replace", timeout=1800,
                 )
                 if result.returncode == 0 and is_valid_video(temp_output):
@@ -14724,7 +14724,7 @@ if ($applied) { exit 0 } else { exit 2 }
     try:
         result = subprocess.run(
             ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
-            capture_output=True, text=True, timeout=18,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=18,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         if result.returncode == 0:
