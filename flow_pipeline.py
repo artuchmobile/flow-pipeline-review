@@ -3359,7 +3359,7 @@ def transcribe_audio(
         result.to_ass(
             str(subtitle_file),
             karaoke=ENABLE_SUBTITLE_KARAOKE,
-            highlight_color="00FFFF",
+            highlight_color="00FFFF" if ENABLE_SUBTITLE_KARAOKE else "FFFFFF",
             primary_color="FFFFFF",
             timing_offset=0.0,
         )
