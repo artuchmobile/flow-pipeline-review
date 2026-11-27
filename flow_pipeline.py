@@ -4616,6 +4616,7 @@ def build_intro_narration_windows(
     narration_segments: list[dict[str, Any]] | None,
     shot_count: int = INTRO_SHOT_COUNT,
     window_seconds: float = FLOW_CLIP_SECONDS,
+    clip_durations: list[float] | None = None,
 ) -> list[dict[str, Any]]:
     """Map Whisper's actual word timestamps onto fixed intro-shot time windows.
 
@@ -4624,9 +4625,14 @@ def build_intro_narration_windows(
     that are spoken while that clip is on screen.
     """
     windows: list[dict[str, Any]] = []
-    for index in range(shot_count):
-        start = index * float(window_seconds)
-        end = (index + 1) * float(window_seconds)
+    durations = [float(x) for x in clip_durations[:shot_count]] if isinstance(clip_durations, list) and len(clip_durations) == shot_count else [float(window_seconds)] * shot_count
+    boundaries = []
+    cursor = 0.0
+    for index, duration in enumerate(durations):
+        start = cursor
+        end = cursor + duration
+        boundaries.append((start, end))
+        cursor = end
         windows.append({
             "shot": index + 1,
             "start": round(start, 3),
@@ -4648,7 +4654,7 @@ def build_intro_narration_windows(
             seg_end = float(segment.get("end", seg_start))
         except (TypeError, ValueError):
             continue
-        if not (seg_end >= 0 and seg_start < shot_count * window_seconds):
+        if not (seg_end >= 0 and seg_start < cursor):
             continue
 
         raw_words = segment.get("words")
@@ -4668,7 +4674,7 @@ def build_intro_narration_windows(
                 # particular, do not drop the final spoken word just because its end
                 # timestamp extends a fraction past the 64-second intro boundary.
                 anchor_time = max(0.0, word_start)
-                window_index = int(anchor_time // float(window_seconds))
+                window_index = next((i for i, (left, right) in enumerate(boundaries) if left <= anchor_time < right), -1)
                 if 0 <= window_index < shot_count:
                     words_by_window[window_index].append(token)
         else:
@@ -4677,7 +4683,7 @@ def build_intro_narration_windows(
             text = str(segment.get("text", "") or "").strip()
             if text:
                 midpoint = max(0.0, (seg_start + seg_end) / 2.0)
-                window_index = int(midpoint // float(window_seconds))
+                window_index = next((i for i, (left, right) in enumerate(boundaries) if left <= midpoint < right), -1)
                 if 0 <= window_index < shot_count:
                     fallback_segments_by_window[window_index].append(text)
 
@@ -13909,7 +13915,7 @@ async def build_intro(
         )
         chars = state.data.get("analysis", {}).get("characters", {})
         ctx = state.data.get("analysis", {}).get("context", {})
-        timed_windows = build_intro_narration_windows(narration_segments, shot_count=intro_count)
+        timed_windows = build_intro_narration_windows(narration_segments, shot_count=intro_count, clip_durations=intro_durations)
         timed_opening_text = " ".join(
             str(item.get("text", "") or "").strip() for item in timed_windows
             if str(item.get("text", "") or "").strip()
