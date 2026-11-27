@@ -15503,7 +15503,7 @@ async def process_project(
                 "transition_dur": 0.0,
                 "pause_before": float(semantic_by_index[idx].get("pause_before", 0.0) or 0.0),
                 "plan": old.get("plan", ""),
-                "prompt": old.get("prompt", "") if same_timeline else "",
+                "prompt": old.get("prompt", "") if old.get("prompt") and is_valid_image(Path(str(old.get("image_path", "")))) else "",
                 "image_path": old.get(
                     "image_path",
                     str(state.media_dir / f"scene_{idx + 1:04d}.jpg"),
@@ -15516,7 +15516,10 @@ async def process_project(
                 "account": old.get("account", ""),
                 "timeline_signature": timeline_signature,
                 "render_effect_version": old.get("render_effect_version", ""),
-                "needs_regeneration": bool(old.get("needs_regeneration", False)) or not same_timeline,
+                # A semantic timeline refresh changes timing, not the existing Flow still.
+                # Reuse a valid cached image and only regenerate when the still is missing
+                # or a previous quality/safety checkpoint explicitly requested it.
+                "needs_regeneration": bool(old.get("needs_regeneration", False)) or not is_valid_image(Path(str(old.get("image_path", ""))),
             }
 
             if same_timeline and is_valid_video(Path(record["output_path"])) and not record["needs_regeneration"]:
