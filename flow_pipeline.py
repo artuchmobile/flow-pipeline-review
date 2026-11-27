@@ -12320,7 +12320,7 @@ def inspect_mp4_provenance(path: Path) -> dict[str, Any]:
     try:
         probe = subprocess.run(
             ["ffprobe", "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", timeout=30,
         )
         if probe.returncode == 0 and probe.stdout.strip():
             parsed = json.loads(probe.stdout)
@@ -13787,7 +13787,18 @@ async def build_intro(
     narration_segments: list[dict[str, Any]] | None = None,
 ) -> float:
     intro = state.data["intro"]
-    INTRO_MASTER_VERSION = "intro-silent-fhd-film-master-v1"
+    narration_duration = max((float(x.get("end", 0) or 0) for x in (narration_segments or []) if isinstance(x, dict)), default=0.0)
+    if narration_duration <= 0.0:
+        narration_duration = float(state.data.get("timing", {}).get("audio_duration", 0.0) or 0.0)
+    saved_plan = intro.get("plan") if isinstance(intro.get("plan"), dict) else None
+    intro_plan = saved_plan if saved_plan and isinstance(saved_plan.get("clip_durations"), list) else plan_floating_intro(narration_segments or [], narration_duration)
+    intro["plan"] = intro_plan
+    intro["clip_durations"] = list(intro_plan["clip_durations"])
+    intro["intro_end_time"] = float(intro_plan["intro_end_time"])
+    intro_count = len(intro_plan["clip_durations"])
+    intro_durations = [float(x) for x in intro_plan["clip_durations"]]
+    INTRO_MASTER_VERSION = "intro-silent-fhd-floating-v2"
+    state.save()
     if intro.get("master_version") != INTRO_MASTER_VERSION:
         intro["master_version"] = INTRO_MASTER_VERSION
         intro["mastered_clips"] = []
@@ -13802,7 +13813,7 @@ async def build_intro(
     prompts = intro.get("prompts", [])
     storyboard_needs_refresh = (
         not isinstance(prompts, list)
-        or len(prompts) != INTRO_SHOT_COUNT
+        or len(prompts) != intro_count
         or intro.get("storyboard_version") != INTRO_STORYBOARD_VERSION
     )
     if storyboard_needs_refresh:
@@ -13815,7 +13826,7 @@ async def build_intro(
             or bool(old_output and old_output.exists())
             or any(
                 (state.media_dir / f"{kind}_{shot_index:02d}.mp4").is_file()
-                for shot_index in range(1, INTRO_SHOT_COUNT + 1)
+                for shot_index in range(1, intro_count + 1)
                 for kind in ("intro_raw", "intro_clip")
             )
             or any(
@@ -13827,7 +13838,7 @@ async def build_intro(
         )
         chars = state.data.get("analysis", {}).get("characters", {})
         ctx = state.data.get("analysis", {}).get("context", {})
-        timed_windows = build_intro_narration_windows(narration_segments)
+        timed_windows = build_intro_narration_windows(narration_segments, shot_count=intro_count)
         timed_opening_text = " ".join(
             str(item.get("text", "") or "").strip() for item in timed_windows
             if str(item.get("text", "") or "").strip()
@@ -13857,9 +13868,9 @@ async def build_intro(
         new_prompts = generate_intro_storyboard_gemini(
             timed_opening_text, chars, ctx, target_lang=target_lang, timed_windows=timed_windows
         )
-        if len(new_prompts) != INTRO_SHOT_COUNT:
+        if len(new_prompts) != intro_count:
             raise FlowTechnicalError(
-                f"Раскадровка интро содержит {len(new_prompts)} кадров вместо {INTRO_SHOT_COUNT}"
+                f"Раскадровка интро содержит {len(new_prompts)} кадров вместо {intro_count}"
             )
 
         # A legacy short intro must not be mistaken for a completed eight-shot intro.
@@ -13931,10 +13942,10 @@ async def build_intro(
             final_state["done"] = False
             final_state["subtitles_burned"] = False
 
-        intro["output"] = str(state.media_dir / "intro_64s.mp4")
+        intro["output"] = str(state.media_dir / "intro_floating.mp4")
         intro["prompts"] = new_prompts
         intro["storyboard_version"] = INTRO_STORYBOARD_VERSION
-        intro["target_duration"] = INTRO_TARGET_SECONDS
+        intro["target_duration"] = float(intro_plan["intro_end_time"])
         state.save()
 
     # Older checkpoints may contain prompts made before safety/audio constraints existed.
@@ -13951,7 +13962,7 @@ async def build_intro(
                 )
             )
     state.save()
-    log.info("[Intro Audio] Оставляю природную дорожку Flow примерно на 15%% исходной амплитуды; пики ограничиваются защитным потолком. Gain=%.3f; peak limiter=%.2f.", FLOW_INTRO_AUDIO_GAIN, FLOW_INTRO_AUDIO_PEAK_LIMIT)
+    log.info("[Intro Audio] Используются беззвучно мастеренные клипы; аудиодорожка Flow не включается.")
 
     clip_paths: list[Path] = []
     clip_durations: list[float] = []
@@ -13964,8 +13975,9 @@ async def build_intro(
     for idx, shot in enumerate(intro["prompts"], start=1):
         raw_path = state.media_dir / f"intro_raw_{idx:02d}.mp4"
         clip_path = state.media_dir / f"intro_clip_{idx:02d}.mp4"
-        shot_start = float(shot.get("narration_start", (idx - 1) * FLOW_CLIP_SECONDS) or 0.0)
-        shot_end = float(shot.get("narration_end", idx * FLOW_CLIP_SECONDS) or idx * FLOW_CLIP_SECONDS)
+        shot_target_duration = intro_durations[idx - 1]
+        shot_start = float(shot.get("narration_start", sum(intro_durations[:idx - 1])) or 0.0)
+        shot_end = float(shot.get("narration_end", shot_start + shot_target_duration) or shot_start + shot_target_duration)
         shot_excerpt = re.sub(r"\s+", " ", str(shot.get("narration_excerpt", "") or "").strip())
         log.info(
             "[Intro Alignment] Shot %s/%s -> %s-%s | narration=%s",
@@ -14110,7 +14122,7 @@ async def build_intro(
         # survive. The prompt forbids dialogue/music; final mix keeps this track quiet.
 
         if clip_path.name not in mastered_clips or not is_valid_video(clip_path):
-            if not normalize_intro_clip_duration(clip_path, FLOW_CLIP_SECONDS):
+            if not normalize_intro_clip_duration(clip_path, shot_target_duration):
                 raise FlowTechnicalError(
                     f"Intro {idx}: не удалось выровнять клип по окну озвучки {shot_start:.3f}-{shot_end:.3f}s"
                 )
@@ -14118,9 +14130,9 @@ async def build_intro(
             intro["mastered_clips"] = sorted(mastered_clips)
             state.save()
         duration = get_duration(clip_path)
-        if duration is None or duration <= 0.05 or abs(duration - FLOW_CLIP_SECONDS) > 0.10:
+        if duration is None or duration <= 0.05 or abs(duration - shot_target_duration) > 0.10:
             raise FlowTechnicalError(
-                f"Intro {idx}: длительность {duration!r}s не совпадает с окном {FLOW_CLIP_SECONDS:.1f}s"
+                f"Intro {idx}: длительность {duration!r}s не совпадает с окном {shot_target_duration:.3f}s"
             )
 
         if ENABLE_YOUTUBE_CONTENT_SAFETY_REVIEW:
@@ -14153,9 +14165,9 @@ async def build_intro(
         intro["actual_duration"] = sum(clip_durations)
         state.save()
 
-    if len(clip_paths) != INTRO_SHOT_COUNT:
+    if len(clip_paths) != intro_count:
         raise FlowTechnicalError(
-            f"Интро неполное: подготовлено {len(clip_paths)} из {INTRO_SHOT_COUNT} обязательных клипов."
+            f"Интро неполное: подготовлено {len(clip_paths)} из {intro_count} обязательных клипов."
         )
 
     temp = state.work_dir / "intro_concat_full.mp4"
