@@ -4613,25 +4613,42 @@ def assign_main_video_insert_slots(main_clips, segments, intro_end_time, audio_d
                         if len(selected)>=len(zones): break
     except Exception as exc: log.warning("[Veo Inserts] LLM selection failed; using zone fallback: %s",exc)
     remainder_by_index={}
+    merged_next_indices=set()
     for i in selected:
         clip=main_clips[i]; start=float(clip["start"]); end=float(clip["end"])
         if end-start>MAIN_VIDEO_INSERT_MAX_DUR:
-            cut=_nearest_whisper_cut(segments,start+MAIN_VIDEO_INSERT_TARGET_DUR,start+MAIN_VIDEO_INSERT_MIN_DUR,min(end-5.5,start+MAIN_VIDEO_INSERT_MAX_DUR))
-            if cut-start<MAIN_VIDEO_INSERT_MIN_DUR: continue
+            cut=_nearest_whisper_cut(segments,start+MAIN_VIDEO_INSERT_TARGET_DUR,start+MAIN_VIDEO_INSERT_MIN_DUR,min(end,start+MAIN_VIDEO_INSERT_MAX_DUR))
+            if cut-start<MAIN_VIDEO_INSERT_MIN_DUR or cut-start>MAIN_VIDEO_INSERT_MAX_DUR: continue
+            remainder_end=end
+            next_record=main_clips[i+1] if i+1<len(main_clips) else None
+            if remainder_end-cut<5.5:
+                if next_record is None or i+1 in selected or float(next_record["end"])-cut>22.0: continue
+                remainder_end=float(next_record["end"])
+                merged_next_indices.add(i+1)
             remainder=dict(clip)
-            remainder["start"]=round(cut,3); remainder["end"]=round(end,3); remainder["duration"]=round(end-cut,3)
+            remainder["start"]=round(cut,3); remainder["end"]=round(remainder_end,3); remainder["duration"]=round(remainder_end-cut,3)
             remainder["media_type"]="image"; remainder["done"]=False; remainder["video_insert_assigned"]=True
             remainder["scene_break"]=False
-            clip["transition_out"]="cut"; clip["transition_dur"]=0.0
+            remainder["text"]=get_text_for_timeslot(segments,cut,remainder_end)
+            remainder["plan"]=" ".join(x for x in (str(clip.get("plan","")),str(next_record.get("plan","")) if i+1 in merged_next_indices else "") if x)
+            remainder["image_path"]=str(Path(clip["image_path"]).with_name(f"scene_insert_remainder_{i+1:04d}.jpg"))
             remainder["output_path"]=str(Path(clip["output_path"]).with_name(f"scene_insert_remainder_{i+1:04d}.mp4"))
+            if i+1 in merged_next_indices:
+                remainder["transition_out"]=next_record.get("transition_out","cut")
+                remainder["transition_dur"]=float(next_record.get("transition_dur",0.0) or 0.0)
+            else:
+                remainder["transition_out"]=clip.get("transition_out","cut")
+                remainder["transition_dur"]=float(clip.get("transition_dur",0.0) or 0.0)
             remainder["remainder_of_scene"]=i+1
             remainder_by_index[i]=remainder
             clip["end"]=round(cut,3); clip["duration"]=round(cut-start,3)
             clip["text"]=get_text_for_timeslot(segments,start,cut)
+            clip["transition_out"]="cut"; clip["transition_dur"]=0.0
         if MAIN_VIDEO_INSERT_MIN_DUR<=float(clip["end"])-float(clip["start"])<=MAIN_VIDEO_INSERT_MAX_DUR:
             clip["media_type"]="video"
     expanded=[]
     for i,clip in enumerate(main_clips):
+        if i in merged_next_indices: continue
         expanded.append(clip)
         if i in remainder_by_index: expanded.append(remainder_by_index[i])
     cursor=float(intro_end_time)
