@@ -4510,7 +4510,7 @@ MAIN_VIDEO_INSERT_TARGET_DUR = 8.0
 
 def plan_floating_intro(segments, audio_duration):
     duration = max(0.0, float(audio_duration or 0.0))
-    upper = max(1, min(8, int((duration * 0.38) // 8.0))) if duration < 420.0 else 11
+    upper = max(5, min(8, int((duration * 0.38) // 8.0))) if duration < 420.0 else 11
     lower = min(5, upper) if duration < 420.0 else 8
     count = max(lower, min(upper, round(duration / 64.0 * 8.0)))
     words = []
@@ -13866,7 +13866,7 @@ def normalize_intro_clip_duration(path: Path, target_duration: float = FLOW_CLIP
     vf = f"setpts=PTS/{speed_pts:.6f},rotate={angle:.9f}:ow=iw:oh=ih:bilinear=1,crop=iw*{crop:.6f}:ih*{crop:.6f},scale=1920:1080:flags=lanczos,eq=contrast={contrast:.4f}:brightness={brightness:.4f}:saturation={saturation:.4f},noise=alls={grain}:allf=t+u,fps={FPS},tpad=stop_mode=clone:stop_duration={pad_seconds:.3f},setsar=1"
     bitrate = f"{random.randint(*VIDEO_BITRATE_RANGE)}k"
     attempts = [
-        [FFMPEG_BIN, "-y", "-i", str(path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target_duration:.3f}", "-r", str(FPS), "-c:v", HW_ENCODER, "-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", bitrate, "-maxrate", "12000k", "-pix_fmt", "yuv420p", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
+        [FFMPEG_BIN, "-y", "-i", str(path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target_duration:.3f}", "-r", str(FPS), "-c:v", HW_ENCODER, "-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", bitrate, "-maxrate", "12000k", "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
         [FFMPEG_BIN, "-y", "-i", str(path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target_duration:.3f}", "-r", str(FPS), "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
     ]
     try:
@@ -15912,7 +15912,10 @@ async def process_project(
         for idx, record in enumerate(state.data["main_clips"]):
             output_path = Path(record["output_path"])
             if record.get("media_type") == "video":
-                if is_valid_video(output_path) and record.get("done"):
+                if is_valid_video(output_path):
+                    record["done"] = True
+                    record["video_insert_mastered"] = True
+                    state.save()
                     continue
                 raw_video = state.media_dir / f"scene_{idx + 1:04d}_raw.mp4"
                 scene_plan_video = str(record.get("plan") or (state.data.get("scene_plan", [""])[idx] if idx < len(state.data.get("scene_plan", [])) else ""))
@@ -15932,7 +15935,14 @@ async def process_project(
                     ), "video"
                 )
                 try:
-                    await generate_flow_with_failover(manager, playwright, "video", video_prompt, raw_video)
+                    video_cast_mode = _scene_cast_mode(scene_plan_video)
+                    video_references = references_for_scene(
+                        character_bible_for_refs, f"CAST={video_cast_mode}", video_prompt
+                    ) if video_cast_mode else []
+                    await generate_flow_with_failover(
+                        manager, playwright, "video", video_prompt, raw_video,
+                        reference_images=video_references,
+                    )
                     target_duration = float(record["end"]) - float(record["start"])
                     if not master_main_video_insert(raw_video, output_path, target_duration):
                         raise FlowTechnicalError("Veo insert mastering failed")
