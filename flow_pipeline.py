@@ -16297,7 +16297,8 @@ async def process_project(
             delta = abs(video_clock - audio_clock)
             log.info("[A/V Timing] video_no_audio=%.3fs | audio.wav=%.3fs | delta=%.3fs (target < 0.250s)", video_clock, audio_clock, delta)
             if delta >= 0.25:
-                log.error("[A/V Timing] Длительности видео и озвучки расходятся на %.3fs; проверь таймлайн/переходы.", delta)
+                log.error("[A/V Timing] Длительности видео и озвучки расходятся на %.3fs; останавливаю сборку, чтобы не выпустить ролик с дрейфом синхронизации.", delta)
+                raise RuntimeError(f"A/V duration mismatch: video_no_audio={video_clock:.3f}s, audio.wav={audio_clock:.3f}s, delta={delta:.3f}s (limit 0.250s)")
         # 8. Audio Mix
         state.set_stage("audio_mix")
         with_audio = Path(state.data["montage"]["with_audio"])
