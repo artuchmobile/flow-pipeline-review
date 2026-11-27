@@ -12301,7 +12301,7 @@ def render_parallax_slide(
             "-s", f"{output_w}x{output_h}", "-r", str(fps), "-i", "pipe:0",
             "-vf", video_filter,
             "-c:v", encoder, *encoder_args,
-            "-pix_fmt", "yuv420p", "-an", "-t", f"{duration:.3f}",
+            "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-an", "-t", f"{duration:.3f}",
             *FFMPEG_CLEAN_META_VIDEO, str(temp_path),
         ]
         proc = None
