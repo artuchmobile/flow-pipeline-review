@@ -4542,6 +4542,76 @@ def plan_floating_intro(segments, audio_duration):
     durations.append(round(intro_end - sum(durations), 3))
     return {"clip_count": len(durations), "clip_durations": durations, "intro_end_time": round(sum(durations), 3)}
 
+
+def _nearest_whisper_cut(segments, target, lo, hi):
+    cuts=[]
+    for segment in segments or []:
+        if not isinstance(segment,dict): continue
+        for word in (segment.get("words") or [segment]):
+            try:
+                end=float(word.get("end",segment.get("end",0)))
+                if lo<=end<=hi: cuts.append(end)
+            except Exception: pass
+    return min(cuts,key=lambda x:abs(x-target)) if cuts else min(hi,max(lo,target))
+
+
+def assign_main_video_insert_slots(main_clips, segments, intro_end_time, audio_duration):
+    if not ENABLE_MAIN_VIDEO_INSERTS or not main_clips or any(x.get("video_insert_assigned") for x in main_clips):
+        return main_clips
+    remaining=max(0.0,float(audio_duration)-float(intro_end_time))
+    zones=([(0.12,0.30),(0.70,0.90)] if remaining<360 else
+           ([(0.08,0.22),(0.28,0.43),(0.58,0.73),(0.80,0.94)] if remaining<=900 else
+            [(0.05,0.18),(0.22,0.36),(0.43,0.58),(0.64,0.78),(0.82,0.96)]))
+    candidates=[(i,c) for i,c in enumerate(main_clips) if float(c["end"])-float(c["start"])>=MAIN_VIDEO_INSERT_MIN_DUR]
+    selected=[]
+    for lo,hi in zones:
+        target=float(intro_end_time)+remaining*(lo+hi)/2
+        eligible=[(i,c) for i,c in candidates if i not in selected and all(abs(i-j)>=3 for j in selected)]
+        if eligible: selected.append(min(eligible,key=lambda x:abs((float(x[1]["start"])+float(x[1]["end"]))/2-target))[0])
+    try:
+        prompt="Choose scene indexes for video inserts; prefer physical movement, travel, nature/weather, crowds and location/era changes; avoid static dialogue. Return only JSON integer array.\n"+"\n".join(f'{i}: {c["start"]:.2f}-{c["end"]:.2f} {str(c.get("text",""))[:180]}' for i,c in candidates[:80])
+        match=re.search(r"\[[\s\S]*?\]",str(call_text_api(prompt) or ""))
+        proposed=json.loads(match.group(0)) if match else []
+        valid=[int(x) for x in proposed if isinstance(x,int) and any(x==i for i,_ in candidates)]
+        if valid: selected=valid[:len(zones)]
+    except Exception as exc: log.warning("[Veo Inserts] LLM selection failed; using zone fallback: %s",exc)
+    for i in selected:
+        clip=main_clips[i]; start=float(clip["start"]); end=float(clip["end"])
+        if end-start>MAIN_VIDEO_INSERT_MAX_DUR:
+            cut=_nearest_whisper_cut(segments,start+8.0,start+7.2,min(end-5.5,start+9.2))
+            if cut-start<7.2: continue
+            clip["end"]=round(cut,3); clip["duration"]=round(cut-start,3)
+            clip["text"]=get_text_for_timeslot(segments,start,cut)
+        if 7.2<=float(clip["end"])-float(clip["start"])<=9.2: clip["media_type"]="video"
+    cursor=float(intro_end_time)
+    for index,clip in enumerate(main_clips):
+        duration=max(0.05,float(clip["end"])-float(clip["start"]))
+        clip["start"]=round(cursor,3); clip["end"]=round(cursor+duration,3); clip["duration"]=round(duration,3)
+        clip["index"]=index; clip["media_type"]="video" if clip.get("media_type")=="video" else "image"
+        clip["video_insert_assigned"]=True; cursor=clip["end"]
+    if main_clips:
+        main_clips[-1]["end"]=round(float(audio_duration),3)
+        main_clips[-1]["duration"]=round(main_clips[-1]["end"]-main_clips[-1]["start"],3)
+    return main_clips
+
+
+def master_main_video_insert(raw_path, output_path, target_duration):
+    if not is_valid_video(raw_path): return False
+    temp=output_path.with_name(output_path.stem+".master_tmp.mp4"); temp.unlink(missing_ok=True)
+    target=float(target_duration)
+    vf=f"setpts=PTS-STARTPTS,scale=1920:1080:force_original_aspect_ratio=increase:flags=lanczos,crop=1920:1080,eq=contrast=1.01:saturation=1.02,noise=alls=1:allf=t+u,fps={FPS},tpad=stop_mode=clone:stop_duration=1,trim=duration={target:.3f},setsar=1"
+    base=["-y","-i",str(raw_path),"-map","0:v:0","-an","-vf",vf,"-t",f"{target:.3f}","-r",str(FPS),"-pix_fmt","yuv420p","-video_track_timescale","15360","-movflags","+faststart",*FFMPEG_CLEAN_META_VIDEO]
+    for encoder in (["-c:v",HW_ENCODER,"-preset",ENCODER_PRESET,"-profile:v","high"],["-c:v","libx264","-preset","fast","-crf","18","-profile:v","high"]):
+        try:
+            temp.unlink(missing_ok=True)
+            subprocess.run(base+encoder+[str(temp)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,timeout=600)
+            actual=get_duration(temp)
+            if is_valid_video(temp) and not has_audio_stream(temp) and actual is not None and abs(actual-target)<=0.12:
+                temp.replace(output_path); return True
+        except Exception as exc: log.warning("[Veo Inserts] Mastering failed: %s",exc)
+    temp.unlink(missing_ok=True); return False
+
+
 def build_intro_narration_windows(
     narration_segments: list[dict[str, Any]] | None,
     shot_count: int = INTRO_SHOT_COUNT,
@@ -15702,6 +15772,10 @@ async def process_project(
                     scene_record["prompt"] = ""
             state.save()
 
+        if not state.data.get("video_inserts_assigned"):
+            state.data["main_clips"] = assign_main_video_insert_slots(state.data["main_clips"], segments, intro_duration, audio_duration)
+            state.data["video_inserts_assigned"] = True
+            state.save()
         # 6. Flow Images -> Video Clips. Use adaptive 2.5D on every still image:
         # soft depth when visual cues suggest people/animals, full depth on landscapes.
         # Intro/Flow/Veo video files are never passed through this renderer.
