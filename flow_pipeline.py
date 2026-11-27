@@ -4569,30 +4569,43 @@ def assign_main_video_insert_slots(main_clips, segments, intro_end_time, audio_d
         eligible=[(i,c) for i,c in candidates if i not in selected and all(abs(i-j)>=3 for j in selected)]
         if eligible: selected.append(min(eligible,key=lambda x:abs((float(x[1]["start"])+float(x[1]["end"]))/2-target))[0])
     try:
-        prompt="Choose scene indexes for video inserts; prefer physical movement, travel, nature/weather, crowds and location/era changes; avoid static dialogue. Return only JSON integer array.\n"+"\n".join(f'{i}: {c["start"]:.2f}-{c["end"]:.2f} {str(c.get("text",""))[:180]}' for i,c in candidates[:80])
+        prompt="Choose scene indexes for video inserts; prefer movement, travel, nature/weather, crowds and location changes; avoid static dialogue. Return JSON integer array.\n"+"\n".join(f'{i}: {c["start"]:.2f}-{c["end"]:.2f} {str(c.get("text",""))[:180]}' for i,c in candidates[:80])
         match=re.search(r"\[[\s\S]*?\]",str(call_text_api(prompt) or ""))
         proposed=json.loads(match.group(0)) if match else []
         valid=[int(x) for x in proposed if isinstance(x,int) and any(x==i for i,_ in candidates)]
         if valid: selected=valid[:len(zones)]
     except Exception as exc: log.warning("[Veo Inserts] LLM selection failed; using zone fallback: %s",exc)
+    remainder_by_index={}
     for i in selected:
         clip=main_clips[i]; start=float(clip["start"]); end=float(clip["end"])
         if end-start>MAIN_VIDEO_INSERT_MAX_DUR:
-            cut=_nearest_whisper_cut(segments,start+8.0,start+7.2,min(end-5.5,start+9.2))
-            if cut-start<7.2: continue
+            cut=_nearest_whisper_cut(segments,start+MAIN_VIDEO_INSERT_TARGET_DUR,start+MAIN_VIDEO_INSERT_MIN_DUR,min(end-5.5,start+MAIN_VIDEO_INSERT_MAX_DUR))
+            if cut-start<MAIN_VIDEO_INSERT_MIN_DUR: continue
+            remainder=dict(clip)
+            remainder["start"]=round(cut,3); remainder["end"]=round(end,3); remainder["duration"]=round(end-cut,3)
+            remainder["media_type"]="image"; remainder["done"]=False; remainder["video_insert_assigned"]=True
+            remainder["output_path"]=str(Path(clip["output_path"]).with_name(f"scene_insert_remainder_{i+1:04d}.mp4"))
+            remainder["remainder_of_scene"]=i+1
+            remainder_by_index[i]=remainder
             clip["end"]=round(cut,3); clip["duration"]=round(cut-start,3)
             clip["text"]=get_text_for_timeslot(segments,start,cut)
-        if 7.2<=float(clip["end"])-float(clip["start"])<=9.2: clip["media_type"]="video"
+        if MAIN_VIDEO_INSERT_MIN_DUR<=float(clip["end"])-float(clip["start"])<=MAIN_VIDEO_INSERT_MAX_DUR:
+            clip["media_type"]="video"
+    expanded=[]
+    for i,clip in enumerate(main_clips):
+        expanded.append(clip)
+        if i in remainder_by_index: expanded.append(remainder_by_index[i])
     cursor=float(intro_end_time)
-    for index,clip in enumerate(main_clips):
+    for index,clip in enumerate(expanded):
         duration=max(0.05,float(clip["end"])-float(clip["start"]))
         clip["start"]=round(cursor,3); clip["end"]=round(cursor+duration,3); clip["duration"]=round(duration,3)
         clip["index"]=index; clip["media_type"]="video" if clip.get("media_type")=="video" else "image"
         clip["video_insert_assigned"]=True; cursor=clip["end"]
-    if main_clips:
-        main_clips[-1]["end"]=round(float(audio_duration),3)
-        main_clips[-1]["duration"]=round(main_clips[-1]["end"]-main_clips[-1]["start"],3)
-    return main_clips
+    if expanded:
+        delta=round(float(audio_duration)-float(expanded[-1]["end"]),3)
+        expanded[-1]["end"]=round(float(audio_duration),3)
+        expanded[-1]["duration"]=round(expanded[-1]["duration"]+delta,3)
+    return expanded
 
 
 def master_main_video_insert(raw_path, output_path, target_duration):
@@ -15808,7 +15821,11 @@ async def process_project(
             state.save()
 
         if not state.data.get("video_inserts_assigned"):
+            for plan_idx, plan_record in enumerate(state.data["main_clips"]):
+                if not plan_record.get("plan") and plan_idx < len(state.data.get("scene_plan", [])):
+                    plan_record["plan"] = state.data["scene_plan"][plan_idx]
             state.data["main_clips"] = assign_main_video_insert_slots(state.data["main_clips"], segments, intro_duration, audio_duration)
+            state.data["scene_plan"] = [str(x.get("plan", "")) for x in state.data["main_clips"]]
             state.data["video_inserts_assigned"] = True
             state.save()
         # 6. Flow Images -> Video Clips. Use adaptive 2.5D on every still image:
