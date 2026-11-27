@@ -15519,7 +15519,7 @@ async def process_project(
                 # A semantic timeline refresh changes timing, not the existing Flow still.
                 # Reuse a valid cached image and only regenerate when the still is missing
                 # or a previous quality/safety checkpoint explicitly requested it.
-                "needs_regeneration": bool(old.get("needs_regeneration", False)) or not is_valid_image(Path(str(old.get("image_path", ""))),
+                "needs_regeneration": bool(old.get("needs_regeneration", False)) or not is_valid_image(Path(str(old.get("image_path", "")))),
             }
 
             if same_timeline and is_valid_video(Path(record["output_path"])) and not record["needs_regeneration"]:
