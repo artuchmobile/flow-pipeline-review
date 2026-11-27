@@ -4509,40 +4509,59 @@ MAIN_VIDEO_INSERT_MAX_DUR = 9.2
 MAIN_VIDEO_INSERT_TARGET_DUR = 8.0
 
 def plan_floating_intro(segments, audio_duration):
-    duration = max(0.0, float(audio_duration or 0.0))
-    upper = max(5, min(8, int((duration * 0.38) // 8.0))) if duration < 420.0 else 11
-    lower = min(5, upper) if duration < 420.0 else 8
-    count = max(lower, min(upper, round(duration / 64.0 * 8.0)))
-    words = []
+    """Choose N and the exact opening endpoint from Whisper sentence/pause boundaries."""
+    duration=max(0.0,float(audio_duration or 0.0))
+    if duration<INTRO_SHORT_VIDEO_THRESHOLD_SEC:
+        upper=max(INTRO_SHORT_MIN_CLIPS,min(INTRO_MIN_CLIPS,int((duration*INTRO_SHORT_VIDEO_MAX_SHARE)//8.0)))
+        lower=INTRO_SHORT_MIN_CLIPS
+    else:
+        lower,upper=INTRO_MIN_CLIPS,INTRO_MAX_CLIPS
+    # Five clips need at least four 8s windows plus a 6.8s final window.
+    physically_possible=max(1,int(max(0.0,duration-6.8)//8.0)+1)
+    upper=min(upper,physically_possible)
+    lower=min(lower,upper)
+    words=[]
     for segment in segments or []:
-        if not isinstance(segment, dict):
-            continue
+        if not isinstance(segment,dict): continue
         for word in (segment.get("words") or [segment]):
             try:
-                start = float(word.get("start", segment.get("start", 0.0)))
-                end = float(word.get("end", segment.get("end", 0.0)))
-                token = str(word.get("word", word.get("text", "")))
-                if end > start:
-                    words.append((start, end, token))
-            except Exception:
-                pass
+                start=float(word.get("start",segment.get("start",0.0)))
+                end=float(word.get("end",segment.get("end",0.0)))
+                token=str(word.get("word",word.get("text","")))
+                if end>start: words.append((start,end,token))
+            except Exception: pass
     words.sort()
-    boundaries = []
-    for index, (_, end, token) in enumerate(words):
-        next_start = words[index + 1][0] if index + 1 < len(words) else duration
-        pause = max(0.0, next_start - end)
-        if re.search(r"[.!?…][\"'”’»)]*$", token) or pause >= 0.35:
-            boundaries.append(end + min(pause * 0.5, 0.5))
-    if boundaries:
-        count = min(range(lower, upper + 1), key=lambda n: abs(min(boundaries, key=lambda x: abs(x - n * 8.0)) - n * 8.0))
-    nominal = count * 8.0
-    feasible = [x for x in boundaries if 6.8 * count <= x <= min(duration, 8.0 * (count - 1) + 9.0)]
-    intro_end = round(min(feasible or [min(duration, nominal)], key=lambda x: abs(x - nominal)), 3)
-    if intro_end < 6.8 * count:
-        count = max(1, min(count, int(intro_end // 6.8)))
-    durations = [8.0] * max(0, count - 1)
-    durations.append(round(intro_end - sum(durations), 3))
-    return {"clip_count": len(durations), "clip_durations": durations, "intro_end_time": round(sum(durations), 3)}
+    boundaries=[]
+    for index,(_,end,token) in enumerate(words):
+        next_start=words[index+1][0] if index+1<len(words) else duration
+        pause=max(0.0,next_start-end)
+        if re.search(r"[.!?…][\"'”’»)]*$",token) or pause>=0.35:
+            boundaries.append(min(duration,end+pause*0.5))
+    options=[]
+    for count in range(lower,upper+1):
+        low=8.0*(count-1)+6.8
+        high=min(duration,8.0*(count-1)+9.0)
+        valid=[x for x in boundaries if low<=x<=high]
+        if valid:
+            best=min(valid,key=lambda x:abs(x-count*8.0))
+            options.append((abs(best-count*8.0),count,best))
+    if options:
+        _,count,intro_end=min(options,key=lambda x:(x[0],x[1]))
+    else:
+        count=max(1,min(upper,round(duration/64.0*8.0)))
+        intro_end=min(duration,8.0*count)
+        if intro_end<8.0*(count-1)+6.8 and count>1:
+            count=max(1,min(count,int((duration-6.8)//8.0)+1))
+            intro_end=min(duration,8.0*count)
+    intro_end=round(max(0.0,intro_end),3)
+    durations=[8.0]*max(0,count-1)
+    durations.append(round(intro_end-sum(durations),3))
+    if durations[-1]<6.8 and count>1:
+        shift=round(6.8-durations[-1],3)
+        durations[-2]=round(durations[-2]-shift,3)
+        durations[-1]=6.8
+    durations[-1]=round(intro_end-sum(durations[:-1]),3)
+    return {"clip_count":len(durations),"clip_durations":durations,"intro_end_time":round(sum(durations),3)}
 
 
 def _nearest_whisper_cut(segments, target, lo, hi):
