@@ -11868,6 +11868,7 @@ def choose_parallax_motion_profile(
     image_path: Path,
     scene_index: int | None = None,
     prev_zooms: list[str] | None = None,
+    forced_zoom_dir: str | None = None,
 ) -> dict[str, Any]:
     """Choose deterministic 2.5D movement; living subjects retain centered calibrated depth."""
     living, reason = scene_has_living_subject(record, scene_plan=scene_plan, characters=characters, image_path=None)
@@ -11895,9 +11896,9 @@ def choose_parallax_motion_profile(
         zoom_amount = rng.choice([0.21, 0.22, 0.23, 0.24])
         pan_dir = rng.choice(["left", "right", "diagonal_left", "diagonal_right", "center"])
         pan_multiplier = rng.uniform(0.45, 0.55)
-    zoom_dir = rng.choice(["in", "out"])
+    zoom_dir = str(forced_zoom_dir) if forced_zoom_dir in {"in", "out"} else rng.choice(["in", "out"])
     prior = list(prev_zooms or [])
-    if len(prior) >= 2 and prior[-1] == prior[-2] == zoom_dir:
+    if forced_zoom_dir not in {"in", "out"} and len(prior) >= 2 and prior[-1] == prior[-2] == zoom_dir:
         zoom_dir = "out" if zoom_dir == "in" else "in"
     profile = "pull_out" if zoom_dir == "out" else "push_in"
     turn_strength = rng.choice([0.62, 0.66, 0.70])
@@ -15682,8 +15683,20 @@ async def process_project(
                 defer_character_locks=True,
             )
 
-        prev_zooms: list[str] = []
-    for idx, record in enumerate(state.data["main_clips"]):
+        planned_zoom_dirs: list[str] = []
+        zoom_history: list[str] = []
+        for zoom_idx, zoom_record in enumerate(state.data["main_clips"]):
+            zoom_plan = state.data.get("scene_plan", [])[zoom_idx] if zoom_idx < len(state.data.get("scene_plan", [])) else ""
+            zoom_image = Path(str(zoom_record.get("image_path", "")))
+            seed_source = f"{zoom_image.name}|{zoom_record.get('prompt', '')}|{zoom_plan or ''}|{zoom_idx}"
+            seed = int(hashlib.md5(seed_source.encode("utf-8", errors="ignore")).hexdigest()[:8], 16)
+            zoom_dir_candidate = random.Random(seed).choice(["in", "out"])
+            if len(zoom_history) >= 2 and zoom_history[-1] == zoom_history[-2] == zoom_dir_candidate:
+                zoom_dir_candidate = "out" if zoom_dir_candidate == "in" else "in"
+            planned_zoom_dirs.append(zoom_dir_candidate)
+            zoom_history.append(zoom_dir_candidate)
+
+        for idx, record in enumerate(state.data["main_clips"]):
             output_path = Path(record["output_path"])
             image_path = Path(record["image_path"])
             scene_plan_for_effect = (
@@ -16075,9 +16088,8 @@ async def process_project(
                 characters=chars,
                 image_path=image_path,
                 scene_index=idx,
-                prev_zooms=prev_zooms,
+                forced_zoom_dir=planned_zoom_dirs[idx] if idx < len(planned_zoom_dirs) else None,
             )
-            prev_zooms.append(str(motion_choice["zoom_dir"]))
             living_subject = bool(motion_choice["living_subject"])
             living_reason = str(motion_choice["reason"])
             parallax_strength = float(motion_choice["depth_strength"])
