@@ -12930,7 +12930,7 @@ def _render_crossfade_group(
                 ("libx264", ["-preset", "fast", "-crf", "20"])]
     for encoder, encoder_args in encoders:
         temp_output.unlink(missing_ok=True)
-        cmd = base_cmd + ["-c:v", encoder, *encoder_args, "-pix_fmt", "yuv420p", "-r", str(FPS),
+        cmd = base_cmd + ["-c:v", encoder, *encoder_args, "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-vf", "setsar=1", "-r", str(FPS),
                           "-t", f"{total_duration:.3f}", *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO), str(temp_output)]
         try:
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=max(900, int(total_duration * 5)))
