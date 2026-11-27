@@ -4533,6 +4533,8 @@ def plan_floating_intro(segments, audio_duration):
         pause = max(0.0, next_start - end)
         if re.search(r"[.!?…][\"'”’»)]*$", token) or pause >= 0.35:
             boundaries.append(end + min(pause * 0.5, 0.5))
+    if boundaries:
+        count = min(range(lower, upper + 1), key=lambda n: abs(min(boundaries, key=lambda x: abs(x - n * 8.0)) - n * 8.0))
     nominal = count * 8.0
     feasible = [x for x in boundaries if 6.8 * count <= x <= min(duration, 8.0 * (count - 1) + 9.0)]
     intro_end = round(min(feasible or [min(duration, nominal)], key=lambda x: abs(x - nominal)), 3)
