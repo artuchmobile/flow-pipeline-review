@@ -11469,7 +11469,7 @@ def plan_semantic_scene_intervals(
             "Group these numbered Whisper transcript sentences into visual scenes for a documentary. "
             f"Each scene should last {min_dur:.0f}-{max_dur:.0f} seconds; target about {target_count} scenes "
             "(acceptable count ±20%). Start a new scene when action, location, character, or time changes. "
-            "Set scene_break=true only for a noticeable location/time/meaning-block change. "
+            "Set scene_break=true only for a genuine location, time, or story-act change; aim for roughly 25-35% of scenes, not every sentence boundary. "
             "Return ONLY strict JSON array: [{\"from\":1,\"to\":3,\"scene_break\":false}, ...]. "
             "Cover every sentence exactly once, in order, with contiguous ranges. Do not invent IDs.\n"
             + numbered
@@ -12433,7 +12433,7 @@ def inspect_mp4_provenance(path: Path) -> dict[str, Any]:
     try:
         probe = subprocess.run(
             ["ffprobe", "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", encoding="utf-8", errors="replace", timeout=30,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", timeout=30,
         )
         if probe.returncode == 0 and probe.stdout.strip():
             parsed = json.loads(probe.stdout)
