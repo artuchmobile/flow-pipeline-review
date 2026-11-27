@@ -4599,8 +4599,6 @@ def assign_main_video_insert_slots(main_clips, segments, intro_end_time, audio_d
                 valid.append(value)
         if valid:
             selected=valid[:len(zones)]
-            for fallback_index in selected.copy():
-                pass
             if len(selected)<len(zones):
                 for fallback_index,_ in candidates:
                     if fallback_index not in selected and all(abs(fallback_index-j)>=3 for j in selected):
