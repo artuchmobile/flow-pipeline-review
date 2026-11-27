@@ -13979,7 +13979,7 @@ async def build_intro(
         else:
             log.info(
                 "[Intro Alignment] Создаю %s shot-промптов по реальным Whisper-таймкодам; "
-                "каждый клип привязан к своему сохранённому временному окну озвучки."
+                "каждый клип привязан к своему сохранённому временному окну озвучки.", intro_count
             )
         new_prompts = generate_intro_storyboard_gemini(
             timed_opening_text, chars, ctx, target_lang=target_lang, timed_windows=timed_windows
@@ -14097,7 +14097,7 @@ async def build_intro(
         shot_excerpt = re.sub(r"\s+", " ", str(shot.get("narration_excerpt", "") or "").strip())
         log.info(
             "[Intro Alignment] Shot %s/%s -> %s-%s | narration=%s",
-            idx, INTRO_SHOT_COUNT, _format_intro_timecode(shot_start), _format_intro_timecode(shot_end),
+            idx, intro_count, _format_intro_timecode(shot_start), _format_intro_timecode(shot_end),
             shot_excerpt[:260] if shot_excerpt else "[no speech in this window]",
         )
 
@@ -14127,11 +14127,11 @@ async def build_intro(
                 if not any(str(path.resolve()).casefold() == hero_key for path in shot_references):
                     shot_references.insert(0, intro_hero_path)
             if intro_hero_path and cast_mode in {"PROTAGONIST", "BOTH"}:
-                log.info("[Intro Reference] Shot %s/%s CAST=%s; прикрепляю эталон главного героя %s.", idx, INTRO_SHOT_COUNT, cast_mode, intro_hero_path.name)
+                log.info("[Intro Reference] Shot %s/%s CAST=%s; прикрепляю эталон главного героя %s.", idx, intro_count, cast_mode, intro_hero_path.name)
             elif cast_mode == "NONE":
                 log.info("[Intro Reference] Shot %s/%s CAST=NONE; эталон героя не прикрепляется.", idx, INTRO_SHOT_COUNT)
             else:
-                log.info("[Intro Reference] Shot %s/%s CAST=%s; secondary references=%s; герой-эталон не прикрепляется.", idx, INTRO_SHOT_COUNT, cast_mode, len(shot_references))
+                log.info("[Intro Reference] Shot %s/%s CAST=%s; secondary references=%s; герой-эталон не прикрепляется.", idx, intro_count, cast_mode, len(shot_references))
 
             generation_prompt = str(shot.get("prompt", "")).strip()
             hero_key = str(intro_hero_path.resolve()).casefold() if intro_hero_path else ""
@@ -14173,7 +14173,7 @@ async def build_intro(
             except Exception as exc:
                 log.error(
                     "❌ [Intro] Flow не создал клип %s/%s после повторов на профилях и упрощения Gemini: %s",
-                    idx, INTRO_SHOT_COUNT, str(exc)[:300],
+                    idx, intro_count, str(exc)[:300],
                 )
                 # Preserve semantic synchronization: if Flow cannot render this shot as
                 # video, request a still IMAGE from the exact same shot prompt and animate
