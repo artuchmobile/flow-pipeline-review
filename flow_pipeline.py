@@ -4790,8 +4790,8 @@ RULES:
 - AUDIO: ONLY very soft natural location ambience (gentle wind, footsteps, fabric movement, room tone, mild weather). Absolutely NO dialogue, voice-over, music, melody, humming, whistling, shrill bird calls, squeals, screeches, metallic squeaks, sharp whooshes, sudden stingers, abrupt impacts, or piercing high tones. Keep ambience smooth and quiet; prefer near-silence to harsh or unnatural sound.
 - SILENT VISUAL PERFORMANCE (CRITICAL): The intro is a silent visual illustration under a separate narrator. Every visible person's mouth must remain gently closed and their lips completely still for all frames. Never show anyone talking, whispering, shouting, singing, mouthing words, lip-syncing, or moving their lips as if speaking. Do not show a character mid-sentence or addressing another character. When the narration quotes or describes dialogue, show the listener's silent reaction, a restrained glance, a small closed-mouth expression, hands/objects, an over-the-shoulder view, or another visual consequence instead of depicting the act of speaking. Prefer profile, three-quarter, or wider compositions; avoid talking-head close-ups. This rule overrides any dialogue/action described in the narration for the visual performance only. The scene may still show the relevant people and story action, but all mouths stay closed and still.
 
-Return ONLY a valid JSON array containing exactly {INTRO_SHOT_COUNT} objects. Every object must contain:
-- `shot`: integer 1 to {INTRO_SHOT_COUNT}
+Return ONLY a valid JSON array containing exactly {shot_count} objects. Every object must contain:
+- `shot`: integer 1 to {shot_count}
 - `cast`: exactly one of `NONE`, `PROTAGONIST`, `SUPPORTING`, `BOTH`
 - `prompt`: a complete Flow video prompt; do not put a CAST marker inside the prompt
 Example shape:
@@ -4813,10 +4813,10 @@ Example shape:
             match = re.search(r"\[.*\]", res, re.DOTALL)
             if match:
                 data = json.loads(match.group(0))
-                if isinstance(data, list) and len(data) == INTRO_SHOT_COUNT:
+                if isinstance(data, list) and len(data) == shot_count:
                     # Respect the model's explicit shot IDs instead of assuming its
                     # JSON array order can never be shuffled.
-                    ordered_data: list[dict[str, Any] | None] = [None] * INTRO_SHOT_COUNT
+                    ordered_data: list[dict[str, Any] | None] = [None] * shot_count
                     for fallback_index, raw_item in enumerate(data, start=1):
                         if not isinstance(raw_item, dict):
                             raise ValueError("Storyboard item is not an object")
@@ -4824,7 +4824,7 @@ Example shape:
                             shot_number = int(raw_item.get("shot", fallback_index))
                         except (TypeError, ValueError):
                             shot_number = fallback_index
-                        if not 1 <= shot_number <= INTRO_SHOT_COUNT or ordered_data[shot_number - 1] is not None:
+                        if not 1 <= shot_number <= shot_count or ordered_data[shot_number - 1] is not None:
                             raise ValueError(f"Storyboard has invalid/duplicate shot number: {shot_number}")
                         ordered_data[shot_number - 1] = raw_item
                     if any(item is None for item in ordered_data):
