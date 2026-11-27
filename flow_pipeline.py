@@ -1510,10 +1510,14 @@ CHANNEL_VOICE_OVERRIDES: dict[str, str] = {
 ACTIVE_TTS_CHANNEL_NAME = ""
 
 
+def _normalize_voice_channel_key(value: str) -> str:
+    return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", str(value or "")).casefold()).strip()
+
+
 def get_channel_tts_voice(channel_name: str) -> str:
-    wanted = normalize_channel_skin_key(channel_name)
+    wanted = _normalize_voice_channel_key(channel_name)
     for configured_name, voice_id in CHANNEL_VOICE_OVERRIDES.items():
-        if normalize_channel_skin_key(configured_name) == wanted and str(voice_id or "").strip():
+        if _normalize_voice_channel_key(configured_name) == wanted and str(voice_id or "").strip():
             return str(voice_id).strip()
     return GEMINI_VOICE_NAME
 
