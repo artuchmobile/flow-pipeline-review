@@ -4635,14 +4635,15 @@ def generate_intro_storyboard_gemini(
     target_lang: str = "ru",
     timed_windows: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Create eight linked eight-second opening shots (about 64 seconds total)."""
+    """Create linked opening shots matching the persisted floating-intro windows."""
     chars = "\n".join(
         f"- {name}: {desc}" for name, desc in (characters or {}).items()
     ) or "Story-accurate figures in authentic attire matching the era."
 
     setting = json.dumps(context or {}, ensure_ascii=False)
     visual_language = narration_language_name(target_lang)
-    windows = timed_windows if isinstance(timed_windows, list) and len(timed_windows) == INTRO_SHOT_COUNT else []
+    shot_count = len(timed_windows) if isinstance(timed_windows, list) and timed_windows else INTRO_SHOT_COUNT
+    windows = timed_windows if isinstance(timed_windows, list) and len(timed_windows) == shot_count else []
     if windows:
         timed_narration_block = "\n".join(
             f"SHOT {int(item.get('shot', i + 1))} | {_format_intro_timecode(float(item.get('start', i * FLOW_CLIP_SECONDS)))}-"
@@ -4658,8 +4659,8 @@ def generate_intro_storyboard_gemini(
 
     prompt = f"""
 You are an elite visual director working in this selected style: {visual_style_description("video")}.
-Create EXACTLY {INTRO_SHOT_COUNT} consecutive cinematic video prompts for Google Flow.
-Each generated clip must be exactly {FLOW_CLIP_SECONDS:g} seconds long in the final timeline; the complete intro is {INTRO_TARGET_SECONDS:g} seconds.
+Create EXACTLY {shot_count} consecutive cinematic video prompts for Google Flow.
+Each generated clip must match its supplied Whisper time window; the complete intro duration is the sum of those windows.
 
 CRITICAL NARRATION-TO-IMAGE SYNCHRONIZATION:
 Each numbered shot corresponds ONLY to its own fixed time window and exact spoken words below.
