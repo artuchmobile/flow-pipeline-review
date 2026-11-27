@@ -302,10 +302,11 @@ FPS = 30
 HW_ENCODER = "h264_nvenc"
 ENCODER_PRESET = "p5"
 
-VOICE_VOLUME_RANGE = (1.00, 1.04)
+VOICE_VOLUME_GAIN = 1.0
 MUSIC_VOLUME_RANGE = (0.18, 0.22)
-SUBTITLE_MARGIN_V_RANGE = (12, 18)
-SUBTITLE_FONT_SIZE_RANGE = (24, 26)
+SUBTITLE_FONT_SIZE = 25
+SUBTITLE_MARGIN_V = 16
+ENABLE_SUBTITLE_KARAOKE = False
 
 
 # Legitimate creative variation for viewing quality and narrative pacing. These settings
@@ -331,7 +332,9 @@ TRANSITION_DURATION_RANGE = (0.25, 0.40)
 # A 0.30s dissolve is subtle enough for documentary pacing without a black flash.
 SLIDE_CROSSFADE_SECONDS = 0.30
 SLIDE_CROSSFADE_BATCH_SIZE = 12  # bound decoder count during per-slide-group rendering
-MONTAGE_TRANSITION_VERSION = "cross-dissolve-all-slide-boundaries-0300ms-v4-rebuild-montage"
+TRANSITION_RENDER_VERSION = "semantic-mixed-cut-dissolve-fadeblack-v1"
+MONTAGE_TRANSITION_VERSION = TRANSITION_RENDER_VERSION
+SEMANTIC_TIMELINE_VERSION = "whisper-llm-pause-aligned-v1"
 USE_DYNAMIC_SLIDE_INTERVALS = True
 
 # 2.5D depth parallax is applied only to still-image scenes rendered into slides.
@@ -1500,6 +1503,20 @@ ACTIVE_TEXT_PROVIDER = "gemini"  # Always defaults to Gemini unless changed in t
 
 GEMINI_AUDIO_MODEL = "gemini-3.8-flash-tts"
 GEMINI_VOICE_NAME = "Algieba"
+# Optional channel-specific Gemini / Extended Voice Library voice IDs.
+CHANNEL_VOICE_OVERRIDES: dict[str, str] = {
+    # "channel folder name": "Algieba",  # or an Extended Voice Library voice ID
+}
+ACTIVE_TTS_CHANNEL_NAME = ""
+
+
+def get_channel_tts_voice(channel_name: str) -> str:
+    wanted = normalize_channel_skin_key(channel_name)
+    for configured_name, voice_id in CHANNEL_VOICE_OVERRIDES.items():
+        if normalize_channel_skin_key(configured_name) == wanted and str(voice_id or "").strip():
+            return str(voice_id).strip()
+    return GEMINI_VOICE_NAME
+
 
 # Keep narration requests compact. Long TTS requests have occasionally returned
 # a valid WAV container with a long silent tail, so split at sentence boundaries
@@ -2868,6 +2885,7 @@ SOURCE TEXT:
 
 
 def text_to_speech_gemini(text: str, out_file: Path, chunk_id: int, total_chunks: int) -> bool:
+    voice_name = get_channel_tts_voice(ACTIVE_TTS_CHANNEL_NAME)
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_AUDIO_MODEL}:generateContent"
     headers = {"Content-Type": "application/json"}
     payload = {
@@ -2883,7 +2901,7 @@ def text_to_speech_gemini(text: str, out_file: Path, chunk_id: int, total_chunks
             "responseModalities": ["AUDIO"],
             "speechConfig": {
                 "voiceConfig": {
-                    "prebuiltVoiceConfig": {"voiceName": GEMINI_VOICE_NAME}
+                    "prebuiltVoiceConfig": {"voiceName": voice_name}
                 }
             },
             "temperature": 0.5,
@@ -3243,7 +3261,7 @@ def generate_audio_gemini_sync(text: str, temp_dir: Path, output_file: Path) -> 
         return False
     chunks = split_text_into_chunks(text)
     total_c = len(chunks)
-    log.info(f"📢 [TTS] Озвучка Gemini TTS ({GEMINI_VOICE_NAME}). Чанков: {total_c}")
+    log.info(f"📢 [TTS] Озвучка Gemini TTS ({get_channel_tts_voice(ACTIVE_TTS_CHANNEL_NAME)}). Чанков: {total_c}")
 
     chunk_dir = temp_dir / "voice_chunks"
     chunk_dir.mkdir(parents=True, exist_ok=True)
@@ -3336,7 +3354,7 @@ def transcribe_audio(
         # makes the captions visibly lead the current slide/audio.
         result.to_ass(
             str(subtitle_file),
-            karaoke=True,
+            karaoke=ENABLE_SUBTITLE_KARAOKE,
             highlight_color="00FFFF",
             primary_color="FFFFFF",
             timing_offset=0.0,
@@ -10954,6 +10972,12 @@ class ProjectState:
             if previous_schema < 2:
                 data["schema"] = 2
                 log.info("[State] Миграция схемы %s -> 2 без сброса существующих checkpoint.", previous_schema)
+            for clip in data.get("main_clips", []) if isinstance(data.get("main_clips", []), list) else []:
+                if isinstance(clip, dict):
+                    clip.setdefault("scene_break", False)
+                    clip.setdefault("media_type", "image")
+                    clip.setdefault("transition_out", "cut")
+                    clip.setdefault("transition_dur", 0.0)
             return data
         except Exception as e:
             broken = self.path.with_name(f"state_broken_{int(time.time())}.json")
@@ -11096,6 +11120,244 @@ class ProjectState:
 # ============================================================================
 # VIDEO MONTAGE & CONVERSION
 # ============================================================================
+
+
+def extract_whisper_sentences(segments, start_time: float, audio_duration: float) -> list[dict[str, Any]]:
+    """Build sentence units from Whisper word timestamps without changing their clock."""
+    if isinstance(segments, dict):
+        raw_words = segments.get("words", [])
+    else:
+        raw_words = []
+        for segment in segments or []:
+            if isinstance(segment, dict):
+                words = segment.get("words") or []
+                if words:
+                    raw_words.extend(words)
+                elif str(segment.get("text", "")).strip():
+                    raw_words.append({"start": segment.get("start", 0.0), "end": segment.get("end", 0.0), "word": segment.get("text", "")})
+    words = []
+    for item in raw_words or []:
+        try:
+            a, b = float(item.get("start", 0.0)), float(item.get("end", 0.0))
+            token = str(item.get("word", item.get("text", ""))).strip()
+            if token and b > a and b > start_time and a < audio_duration:
+                words.append({"start": max(start_time, a), "end": min(audio_duration, b), "word": token})
+        except (TypeError, ValueError, AttributeError):
+            continue
+    words.sort(key=lambda x: (x["start"], x["end"]))
+    sentences: list[dict[str, Any]] = []
+    current = []
+    for i, word in enumerate(words):
+        current.append(word)
+        next_start = words[i + 1]["start"] if i + 1 < len(words) else audio_duration
+        pause = max(0.0, next_start - word["end"])
+        terminal = bool(re.search(r"[.!?…][\"'”’»)]*$", word["word"]))
+        if terminal or pause >= 0.35 or i == len(words) - 1:
+            text = " ".join(x["word"] for x in current).strip()
+            if text:
+                sentences.append({
+                    "id": len(sentences) + 1,
+                    "start": float(current[0]["start"]),
+                    "end": float(current[-1]["end"]),
+                    "text": text,
+                    "pause_after": float(pause),
+                    "_first_word": current[0],
+                    "_last_word": current[-1],
+                })
+            current = []
+    return sentences
+
+
+def _semantic_boundary_time(left: dict, right: dict) -> tuple[float, float]:
+    gap = max(0.0, float(right["start"]) - float(left["end"]))
+    # The cut stays in the silent gap and no more than 150 ms after the last word.
+    cut = min(float(right["start"]), float(left["end"]) + min(gap * 0.5, 0.15))
+    return cut, gap
+
+
+def calculate_pause_aligned_intervals(
+    segments, audio_duration: float, start_time: float, min_dur: float = 8.0,
+    target_dur: float = 15.0, max_dur: float = 22.0,
+) -> list[dict[str, Any]]:
+    """Deterministic local fallback: cut only at sentence/pause boundaries."""
+    sentences = extract_whisper_sentences(segments, start_time, audio_duration)
+    if not sentences:
+        return [{"start": a, "end": b, "scene_break": False, "pause_before": 0.0}
+                for a, b in calculate_dynamic_slide_intervals(audio_duration, start_time, min_dur, max_dur)]
+    groups: list[list[dict]] = []
+    cursor = 0
+    while cursor < len(sentences):
+        best = cursor + 1
+        best_score = float("inf")
+        for end_idx in range(cursor + 1, len(sentences) + 1):
+            end_time = float(sentences[end_idx - 1]["end"])
+            dur = end_time - float(sentences[cursor]["start"])
+            if dur > max_dur and end_idx > cursor + 1:
+                break
+            if dur >= min_dur:
+                score = abs(dur - target_dur)
+                if score < best_score:
+                    best, best_score = end_idx, score
+                if dur >= target_dur:
+                    break
+        if best == cursor + 1 and cursor + 1 < len(sentences):
+            while best < len(sentences) and float(sentences[best - 1]["end"]) - float(sentences[cursor]["start"]) < min_dur:
+                best += 1
+        groups.append(sentences[cursor:best])
+        cursor = best
+    # Merge a very short tail with its predecessor.
+    if len(groups) > 1 and float(groups[-1][-1]["end"]) - float(groups[-1][0]["start"]) < 6.5:
+        groups[-2].extend(groups[-1])
+        groups.pop()
+    result = []
+    for i, group in enumerate(groups):
+        start = float(group[0]["start"]) if i == 0 else result[-1]["end"]
+        if i < len(groups) - 1:
+            boundary, pause = _semantic_boundary_time(group[-1], groups[i + 1][0])
+        else:
+            boundary, pause = float(audio_duration), 0.0
+        if boundary <= start:
+            boundary = min(float(audio_duration), max(start + 0.05, float(group[-1]["end"])))
+        result.append({"start": start, "end": boundary, "scene_break": False,
+                       "pause_before": pause if i else 0.0,
+                       "_sentence_from": group[0]["id"], "_sentence_to": group[-1]["id"]})
+    if result:
+        result[-1]["end"] = float(audio_duration)
+    return [x for x in result if x["end"] > x["start"]]
+
+
+def plan_semantic_scene_intervals(
+    segments, audio_duration: float, start_time: float, min_dur: float = 8.0,
+    target_dur: float = 15.0, max_dur: float = 22.0,
+) -> list[dict[str, Any]]:
+    """Ask the text model for semantic sentence groups; locally validate and align every cut."""
+    sentences = extract_whisper_sentences(segments, start_time, audio_duration)
+    if not sentences:
+        return calculate_pause_aligned_intervals(segments, audio_duration, start_time, min_dur, target_dur, max_dur)
+
+    blocks: list[list[dict]] = []
+    block: list[dict] = []
+    block_start = float(sentences[0]["start"])
+    for sentence in sentences:
+        block.append(sentence)
+        span = float(sentence["end"]) - block_start
+        if len(block) >= 50 or (len(block) >= 30 and span >= 240.0):
+            blocks.append(block)
+            block = []
+            if len(blocks) < len(sentences):
+                block_start = float(sentence["end"])
+    if block:
+        blocks.append(block)
+
+    all_groups: list[dict[str, Any]] = []
+    for block_index, units in enumerate(blocks):
+        block_duration = float(units[-1]["end"]) - float(units[0]["start"])
+        target_count = max(1, round(block_duration / target_dur))
+        numbered = "\n".join(f'{x["id"]}: {x["text"]}' for x in units)
+        prompt = (
+            "Group these numbered Whisper transcript sentences into visual scenes for a documentary. "
+            f"Each scene should last {min_dur:.0f}-{max_dur:.0f} seconds; target about {target_count} scenes "
+            "(acceptable count ±20%). Start a new scene when action, location, character, or time changes. "
+            "Set scene_break=true only for a noticeable location/time/meaning-block change. "
+            "Return ONLY strict JSON array: [{\"from\":1,\"to\":3,\"scene_break\":false}, ...]. "
+            "Cover every sentence exactly once, in order, with contiguous ranges. Do not invent IDs.\n"
+            + numbered
+        )
+        parsed = None
+        try:
+            response = call_text_api(prompt)
+            match = re.search(r"\[[\s\S]*\]", str(response or ""))
+            candidate = json.loads(match.group(0)) if match else None
+            if isinstance(candidate, list) and candidate:
+                expected = [int(x["id"]) for x in units]
+                covered = []
+                checked = []
+                for item in candidate:
+                    a, b = int(item["from"]), int(item["to"])
+                    if a > b or a not in expected or b not in expected:
+                        raise ValueError("range outside block")
+                    checked.append({"from": a, "to": b, "scene_break": bool(item.get("scene_break", False))})
+                    covered.extend(range(a, b + 1))
+                if covered != expected:
+                    raise ValueError("sentence coverage has gaps, overlaps, or wrong order")
+                if not (target_count * 0.8 <= len(checked) <= target_count * 1.2 or len(checked) == 1):
+                    raise ValueError("scene count outside ±20% target")
+                parsed = checked
+        except Exception as exc:
+            log.warning("[Semantic Planning] Блок %s: LLM JSON/coverage invalid (%s); использую локальные паузы.", block_index + 1, exc)
+
+        if parsed is None:
+            fallback = calculate_pause_aligned_intervals(
+                [{"words": [w for sentence in units for w in []]}], block_duration, float(units[0]["start"]), min_dur, target_dur, max_dur
+            )
+            # Group the already extracted sentence records locally (no second ASR pass).
+            local_groups: list[dict] = []
+            pos = 0
+            while pos < len(units):
+                end_pos = pos + 1
+                while end_pos < len(units) and float(units[end_pos - 1]["end"]) - float(units[pos]["start"]) < target_dur:
+                    if float(units[end_pos]["end"]) - float(units[pos]["start"]) > max_dur:
+                        break
+                    end_pos += 1
+                local_groups.append({"from": units[pos]["id"], "to": units[end_pos - 1]["id"], "scene_break": False})
+                pos = end_pos
+            parsed = local_groups
+
+        # Repair overlong scenes by splitting at the nearest sentence boundary.
+        repaired = []
+        for group in parsed:
+            a, b = int(group["from"]), int(group["to"])
+            chunk = [x for x in units if a <= int(x["id"]) <= b]
+            pieces: list[list[dict]] = []
+            piece: list[dict] = []
+            for sentence in chunk:
+                if piece and float(sentence["end"]) - float(piece[0]["start"]) > 23.0:
+                    pieces.append(piece)
+                    piece = []
+                piece.append(sentence)
+            if piece:
+                pieces.append(piece)
+            for pidx, piece in enumerate(pieces):
+                repaired.append({"from": piece[0]["id"], "to": piece[-1]["id"],
+                                 "scene_break": bool(group.get("scene_break", False)) if pidx == 0 else False})
+        # Merge tiny groups with the preceding group to avoid flash-scene cuts.
+        merged = []
+        for group in repaired:
+            chunk = [x for x in units if group["from"] <= x["id"] <= group["to"]]
+            dur = float(chunk[-1]["end"]) - float(chunk[0]["start"])
+            if dur < 6.5 and merged:
+                merged[-1]["to"] = group["to"]
+            else:
+                merged.append(dict(group))
+        all_groups.extend(merged)
+
+    # Convert sentence ranges to exact pause-centred scene boundaries.
+    sentence_by_id = {int(x["id"]): x for x in sentences}
+    scene_specs = []
+    for group in all_groups:
+        first = sentence_by_id[int(group["from"])]
+        last = sentence_by_id[int(group["to"])]
+        scene_specs.append({"first": first, "last": last, "scene_break": bool(group.get("scene_break", False))})
+    result = []
+    for i, spec in enumerate(scene_specs):
+        if i == 0:
+            start = float(start_time)
+            pause = 0.0
+        else:
+            start, pause = _semantic_boundary_time(scene_specs[i - 1]["last"], spec["first"])
+        if i + 1 < len(scene_specs):
+            end, _ = _semantic_boundary_time(spec["last"], scene_specs[i + 1]["first"])
+        else:
+            end = float(audio_duration)
+        if end <= start:
+            end = min(float(audio_duration), max(start + 0.05, float(spec["last"]["end"])))
+        result.append({"start": start, "end": end, "scene_break": spec["scene_break"],
+                       "pause_before": pause, "_sentence_from": spec["first"]["id"],
+                       "_sentence_to": spec["last"]["id"]})
+    if result:
+        result[0]["start"] = float(start_time)
+        result[-1]["end"] = float(audio_duration)
+    return [x for x in result if x["end"] > x["start"]]
 
 
 def calculate_dynamic_slide_intervals(
@@ -11536,74 +11798,49 @@ def choose_parallax_motion_profile(
     characters: Any,
     image_path: Path,
     scene_index: int | None = None,
+    prev_zooms: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Choose only centered push-in/pull-out while retaining the original 2.5D depth effect.
-
-    The depth-map renderer still moves foreground/background layers relative to each
-    other, as in the older V49 implementation. The camera itself never pans sideways,
-    vertically, or diagonally. Zoom direction alternates by scene index for a balanced
-    in/out rhythm and stays deterministic when a project is resumed.
-    """
-    living, reason = scene_has_living_subject(
-        record, scene_plan=scene_plan, characters=characters, image_path=None
-    )
-    prompt = " ".join([
-        str(record.get("prompt", "")),
-        str(record.get("visual_prompt", "")),
-        str(record.get("scene_description", "")),
-        str(scene_plan or record.get("plan", "")),
-    ]).lower()
+    """Choose deterministic 2.5D movement; living subjects retain centered calibrated depth."""
+    living, reason = scene_has_living_subject(record, scene_plan=scene_plan, characters=characters, image_path=None)
+    prompt = " ".join([str(record.get("prompt", "")), str(record.get("visual_prompt", "")),
+                       str(record.get("scene_description", "")), str(scene_plan or record.get("plan", ""))]).lower()
     landscape_cues = re.compile(
-        r"\b(?:landscape|wide shot|panorama|desert|mountain|mountains|valley|plain|road|trail|"
-        r"forest|woods|coast|ocean|sea|river|lake|field|horizon|skyline|cityscape|village|"
-        r"architecture|building|buildings|ruins|temple|castle|fortress|street|courtyard|"
-        r"interior|hall|room|corridor|canyon|cliff|waterfall|bridge|establishing shot|"
-        r"пейзаж|горы|пустыня|долина|дорога|лес|река|озеро|море|океан|поле|горизонт|"
-        r"здание|архитектура|руины|замок|улица|двор|интерьер|зал|комната|коридор)\b",
+        r"\b(?:landscape|wide shot|panorama|desert|mountain|mountains|valley|plain|road|trail|forest|woods|coast|ocean|sea|river|lake|field|horizon|skyline|cityscape|village|architecture|building|buildings|ruins|temple|castle|fortress|street|courtyard|interior|hall|room|corridor|canyon|cliff|waterfall|bridge|object|objects|still life|пейзаж|горы|пустыня|долина|дорога|лес|река|озеро|море|океан|поле|горизонт|здание|архитектура|руины|замок|улица|двор|интерьер|зал|комната|коридор|предмет)\b",
         re.IGNORECASE,
     )
     environment_scene = bool(landscape_cues.search(prompt)) and not living
-
-    seed_source = f"{image_path.name}|{record.get('prompt', '')}|{scene_plan or ''}"
+    seed_source = f"{image_path.name}|{record.get('prompt', '')}|{scene_plan or ''}|{scene_index}"
     seed = int(hashlib.md5(seed_source.encode("utf-8", errors="ignore")).hexdigest()[:8], 16)
     rng = random.Random(seed)
-
-    # Preserve the same depth-strength and zoom-amount ranges used by V49/V59.
     if living:
         strength = 0.34
         zoom_amount = rng.choice([0.20, 0.21, 0.22, 0.23])
+        pan_dir, pan_multiplier = "center", 0.0
     elif environment_scene:
         strength = 1.00
         zoom_amount = rng.choice([0.23, 0.24, 0.25, 0.26])
+        pan_dir = rng.choice(["left", "right", "diagonal_left", "diagonal_right", "center"])
+        pan_multiplier = rng.uniform(0.45, 0.55)
     else:
         strength = 0.76
         zoom_amount = rng.choice([0.21, 0.22, 0.23, 0.24])
-
-    # Strictly centered camera: the only global camera movement is zoom in/out.
-    # scene_index is zero-based: scene 1 pulls out, scene 2 pushes in, then alternates.
-    if scene_index is None:
-        zoom_dir = rng.choice(["in", "out"])
-    else:
-        zoom_dir = "out" if int(scene_index) % 2 == 0 else "in"
+        pan_dir = rng.choice(["left", "right", "diagonal_left", "diagonal_right", "center"])
+        pan_multiplier = rng.uniform(0.45, 0.55)
+    zoom_dir = rng.choice(["in", "out"])
+    prior = list(prev_zooms or [])
+    if len(prior) >= 2 and prior[-1] == prior[-2] == zoom_dir:
+        zoom_dir = "out" if zoom_dir == "in" else "in"
     profile = "pull_out" if zoom_dir == "out" else "push_in"
-
-    # Retain the original low-amplitude depth-layer turn from the old renderer.
-    # This is differential 2.5D parallax between depth layers, not a camera pan.
     turn_strength = rng.choice([0.62, 0.66, 0.70])
     turn_direction = rng.choice([-1.0, 1.0])
-
     return {
         "living_subject": living,
         "reason": reason if living else ("landscape/environment prompt" if environment_scene else "general visual prompt"),
-        "depth_strength": strength,
-        "zoom_amount": zoom_amount,
-        "profile": profile,
-        "pan_dir": "center",
-        "zoom_dir": zoom_dir,
-        "pan_multiplier": 0.0,
-        "turn_strength": turn_strength,
-        "turn_direction": turn_direction,
+        "depth_strength": strength, "zoom_amount": zoom_amount, "profile": profile,
+        "pan_dir": pan_dir, "zoom_dir": zoom_dir, "pan_multiplier": pan_multiplier,
+        "turn_strength": turn_strength, "turn_direction": turn_direction,
     }
+
 
 def render_parallax_slide(
     image_path: Path,
@@ -11739,7 +11976,8 @@ def render_parallax_slide(
             # Quintic smootherstep: zero velocity and acceleration at both ends.
             # motion progresses only 0 -> 1 (never reverses across the midpoint),
             # which avoids the apparent mid-shot snap in the previous -1 -> +1 path.
-            eased = t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
+            eased = t * t * (3.0 - 2.0 * t)
+            # Cubic smoothstep gives a natural S-curve with zero endpoint velocity.
             motion = eased
             # Single-direction depth motion only. Each depth layer moves gradually
             # in the same direction for the entire clip; there is no arc that
@@ -11772,6 +12010,12 @@ def render_parallax_slide(
                 vertical_room = max(0.0, canvas_h - visible_h)
                 cam_cy -= 0.34 * vertical_room
 
+            visible_w = output_w * output_pixel_scale / scale
+            visible_h = output_h * output_pixel_scale / scale
+            horizontal_room = max(0.0, canvas_w - visible_w)
+            vertical_room = max(0.0, canvas_h - visible_h)
+            cam_cx += camera_move_x * float(pan_multiplier) * horizontal_room * 0.12 * motion
+            cam_cy += camera_move_y * float(pan_multiplier) * vertical_room * 0.12 * motion
             map_x_out = cam_cx + rot_x_centered * output_pixel_scale / scale
             map_y_out = cam_cy + rot_y_centered * output_pixel_scale / scale
             map_x_out = map_x_out.astype(np.float32)
@@ -12336,7 +12580,7 @@ def _run_concat_demuxer_with_fallback(
     return False
 
 
-def _concat_normalized_parts(parts: list[Path], output_path: Path, temp_dir: Path) -> bool:
+def _concat_normalized_parts(parts: list[Path], output_path: Path, temp_dir: Path, preserve_audio: bool = True) -> bool:
     """Hard-cut fallback for already normalized parts."""
     if not parts:
         return False
@@ -12345,7 +12589,7 @@ def _concat_normalized_parts(parts: list[Path], output_path: Path, temp_dir: Pat
     temp = output_path.with_suffix(".fallback-temp.mp4")
     total_duration = sum(get_duration(path) or 0.0 for path in parts)
     return _run_concat_demuxer_with_fallback(
-        listing, temp, output_path, preserve_audio=True,
+        listing, temp, output_path, preserve_audio=preserve_audio,
         context=output_path.name, duration_hint=total_duration or None,
     )
 
@@ -12356,95 +12600,66 @@ def _render_crossfade_group(
     output_path: Path,
     temp_dir: Path,
     preserve_audio: bool,
+    transitions: list[dict[str, Any]] | None = None,
 ) -> bool:
-    """Cross-dissolve a bounded group of clips without changing its total runtime.
-
-    The incoming clip receives a short frozen first frame. That frame is used
-    during the dissolve before the scheduled scene boundary; its actual motion
-    starts on the original timeline boundary. The outgoing scene's motion is not
-    changed. The input clips' camera paths are never re-rendered or modified.
-    """
+    """Render only requested dissolves/fade-to-black seams; hard-cut runs are pre-concatenated."""
     if len(input_paths) < 2 or len(input_paths) != len(durations):
         return False
-
+    transitions = transitions or [{"type": "dissolve", "duration": SLIDE_CROSSFADE_SECONDS} for _ in range(len(input_paths) - 1)]
+    if len(transitions) != len(input_paths) - 1:
+        return False
     total_duration = sum(max(0.1, float(d)) for d in durations)
-    transition_lengths: list[float] = []
-    for i in range(1, len(input_paths)):
-        left_d = max(0.1, float(durations[i - 1]))
-        right_d = max(0.1, float(durations[i]))
-        transition_lengths.append(min(
-            SLIDE_CROSSFADE_SECONDS,
-            left_d * 0.20,
-            right_d * 0.20,
-        ))
-
-    filters: list[str] = []
+    filters = []
     for i in range(len(input_paths)):
-        chain = f"[{i}:v]fps={FPS},format=yuv420p"
-        if i > 0:
-            chain += f",tpad=start_mode=clone:start_duration={transition_lengths[i - 1]:.3f},fps={FPS},format=yuv420p"
-        chain += f"[v{i}]"
-        filters.append(chain)
-
+        filters.append(f"[{i}:v]fps={FPS},settb=AVTB,format=yuv420p[v{i}]")
     current_label = "v0"
     accumulated_duration = float(durations[0])
     for i in range(1, len(input_paths)):
-        transition = transition_lengths[i - 1]
-        offset = max(0.0, accumulated_duration - transition)
+        spec = transitions[i - 1] or {}
+        transition = max(0.0, float(spec.get("duration", 0.0) or 0.0))
+        if transition <= 0.0:
+            return False
+        # Freeze the incoming first frame for T seconds. The scene's actual motion
+        # therefore starts on its exact scheduled boundary after the overlap.
+        filters.append(f"[{i}:v]tpad=start_mode=clone:start_duration={transition:.3f},fps={FPS},settb=AVTB,format=yuv420p[p{i}]")
         next_label = f"xf{i}"
-        filters.append(
-            f"[{current_label}][v{i}]xfade=transition=fade:duration={transition:.3f}:offset={offset:.3f}[{next_label}]"
-        )
+        kind = "fadeblack" if str(spec.get("type", "dissolve")) == "fadeblack" else "fade"
+        offset = max(0.0, accumulated_duration - transition)
+        filters.append(f"[{current_label}][p{i}]xfade=transition={kind}:duration={transition:.3f}:offset={offset:.3f}[{next_label}]")
         current_label = next_label
         accumulated_duration += float(durations[i])
-
     temp_output = output_path.with_suffix(".xfade-temp.mp4")
     temp_output.unlink(missing_ok=True)
-
-    base_cmd = ["ffmpeg", "-y", "-filter_complex_threads", "2"]
+    base_cmd = [FFMPEG_BIN, "-y", "-filter_complex_threads", "2"]
     for path in input_paths:
         base_cmd.extend(["-i", str(path)])
     if preserve_audio:
-        # The main slides are silent; add one continuous silent track so the
-        # resulting slideshow can be concatenated seamlessly after the audible intro.
-        base_cmd.extend([
-            "-f", "lavfi", "-t", f"{total_duration:.3f}", "-i",
-            "anullsrc=channel_layout=stereo:sample_rate=44100",
-        ])
-
-    base_cmd.extend([
-        "-filter_complex", ";".join(filters),
-        "-map", f"[{current_label}]",
-    ])
+        base_cmd.extend(["-f", "lavfi", "-t", f"{total_duration:.3f}", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"])
+    base_cmd.extend(["-filter_complex", ";".join(filters), "-map", f"[{current_label}]"])
     if preserve_audio:
         base_cmd.extend(["-map", f"{len(input_paths)}:a:0", "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2"])
     else:
         base_cmd.append("-an")
-
-    encoders = [
-        (HW_ENCODER, ["-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", "8000k", "-maxrate", "10000k"]),
-        ("libx264", ["-preset", "fast", "-crf", "20"]),
-    ]
+    encoders = [(HW_ENCODER, ["-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", "8000k", "-maxrate", "10000k"]),
+                ("libx264", ["-preset", "fast", "-crf", "20"])]
     for encoder, encoder_args in encoders:
         temp_output.unlink(missing_ok=True)
-        cmd = base_cmd + [
-            "-c:v", encoder, *encoder_args,
-            "-pix_fmt", "yuv420p", "-r", str(FPS),
-            "-t", f"{total_duration:.3f}", str(temp_output),
-        ]
+        cmd = base_cmd + ["-c:v", encoder, *encoder_args, "-pix_fmt", "yuv420p", "-r", str(FPS),
+                          "-t", f"{total_duration:.3f}", *FFMPEG_CLEAN_META_AV if preserve_audio else *FFMPEG_CLEAN_META_VIDEO, str(temp_output)]
         try:
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=max(900, int(total_duration * 5)))
-            if is_valid_video(temp_output):
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=max(900, int(total_duration * 5)))
+            actual = get_duration(temp_output)
+            if is_valid_video(temp_output) and actual is not None and abs(actual - total_duration) < 0.25:
                 temp_output.replace(output_path)
-                log.info(
-                    "🎞️ [Переходы] Cross-dissolve: %s клипов | %.2fs итоговой длительности | движение слайдов не менялось",
-                    len(input_paths), total_duration,
-                )
+                log.info("[Transitions] %s segments; duration %.3fs; transition specs=%s", len(input_paths), actual, transitions)
                 return True
         except Exception as exc:
-            log.warning("⚠️ [Переходы] Cross-dissolve не удался на %s: %s", encoder, exc)
+            log.warning("[Transitions] xfade group failed on %s: %s", encoder, exc)
     temp_output.unlink(missing_ok=True)
     return False
+
+
+
 
 
 def concatenate_videos(
@@ -12454,144 +12669,102 @@ def concatenate_videos(
     preserve_audio: bool = False,
     crossfade_duration: float = 0.0,
     transition_start_index: int = 0,
+    transitions: list[dict[str, Any]] | None = None,
 ) -> bool:
-    """Normalize and concatenate clips, optionally cross-dissolving a tail group.
-
-    crossfade_duration=0 preserves hard cuts, so intro assembly stays untouched.
-    For final montage calls, transition_start_index leaves any leading intro clip
-    unchanged and transitions only image slides. Long slide runs are processed in
-    bounded groups, then the small group outputs are dissolved at their seams too.
-    """
-    indexed = [
-        (idx, p, d)
-        for idx, (p, d) in enumerate(video_parts)
-        if p.exists() and is_valid_video(p)
-    ]
+    """Normalize once, stream-copy hard-cut runs, and xfade only flagged boundaries."""
+    indexed = [(idx, p, d) for idx, (p, d) in enumerate(video_parts) if p.exists() and is_valid_video(p)]
     if not indexed:
         return False
-
-    normalized_items: list[tuple[int, Path, float]] = []
-    created_temp_paths: list[Path] = []
-    for seq_idx, (source_idx, path, duration) in enumerate(indexed):
-        norm = temp_dir / f"concat_norm_{output_path.stem}_{seq_idx:04d}.mp4"
-        normalize_clip_for_concat(
-            path,
-            norm,
-            target_duration=duration,
-            preserve_audio=preserve_audio,
-        )
-        actual_duration = float(duration) if duration is not None else (get_duration(norm) or 0.0)
-        normalized_items.append((source_idx, norm, actual_duration))
-        created_temp_paths.append(norm)
-
-    final_parts: list[Path] = []
-    crossfade_outputs: list[Path] = []
-    can_crossfade = crossfade_duration > 0 and len(normalized_items) > 1
-    if can_crossfade:
-        prefix_items = [item for item in normalized_items if item[0] < transition_start_index]
-        slide_items = [item for item in normalized_items if item[0] >= transition_start_index]
-        if len(slide_items) > 1:
-            slide_batches: list[tuple[Path, float]] = []
-            crossfade_batch_failure = False
-            batch_size = max(2, int(SLIDE_CROSSFADE_BATCH_SIZE))
-            for batch_idx, batch_start in enumerate(range(0, len(slide_items), batch_size)):
-                batch = slide_items[batch_start:batch_start + batch_size]
-                batch_paths = [item[1] for item in batch]
-                batch_durations = [item[2] for item in batch]
-                batch_duration = sum(batch_durations)
-                if len(batch) == 1:
-                    slide_batches.append((batch_paths[0], batch_duration))
-                    continue
-
-                batch_output = temp_dir / f"{output_path.stem}_xfade_batch_{batch_idx:03d}.mp4"
-                ok = _render_crossfade_group(
-                    batch_paths,
-                    batch_durations,
-                    batch_output,
-                    temp_dir,
-                    preserve_audio=preserve_audio,
-                )
-                if not ok:
-                    log.warning("⚠️ [Переходы] Пакет %s: использую обычную склейку без смены движения слайдов.", batch_idx + 1)
-                    try:
-                        ok = _concat_normalized_parts(batch_paths, batch_output, temp_dir)
-                    except Exception as exc:
-                        log.warning("⚠️ [Переходы] Fallback-склейка пакета %s не удалась: %s", batch_idx + 1, exc)
-                        ok = False
-                if ok:
-                    slide_batches.append((batch_output, batch_duration))
-                    crossfade_outputs.append(batch_output)
-                else:
-                    # Never drop a scene if both the transition render and the
-                    # batch concat fallback fail. Fall back to all original parts.
-                    crossfade_batch_failure = True
-                    break
-
-            if crossfade_batch_failure or len(slide_batches) == 0:
-                final_parts = [item[1] for item in normalized_items]
-            elif len(slide_batches) == 1:
-                final_parts = [item[1] for item in prefix_items] + [slide_batches[0][0]]
-            else:
-                # First pass: cross-dissolve every slide boundary inside bounded
-                # groups (at most SLIDE_CROSSFADE_BATCH_SIZE source clips per graph).
-                # Second pass: cross-dissolve the rendered group files at their seams.
-                # This keeps FFmpeg's decoder count bounded while ensuring there is
-                # no periodic hard cut every N slides. The second graph contains only
-                # a small number of already-rendered group files; it is not a nested
-                # per-scene graph. Both passes preserve the sum of scheduled durations.
-                batch_paths = [item[0] for item in slide_batches]
-                batch_durations = [item[1] for item in slide_batches]
-                slideshow_output = temp_dir / f"{output_path.stem}_slide_crossfades.mp4"
-                try:
-                    ok = _render_crossfade_group(
-                        batch_paths,
-                        batch_durations,
-                        slideshow_output,
-                        temp_dir,
-                        preserve_audio=preserve_audio,
-                    )
-                except Exception as exc:
-                    log.warning("⚠️ [Переходы] Cross-dissolve между пакетами не удался: %s", exc)
-                    ok = False
-                if not ok:
-                    # Keep all within-batch dissolves if only the boundary pass fails.
-                    log.warning("⚠️ [Переходы] Использую склейку уже обработанных пакетов без растворения на границах пакетов.")
-                    try:
-                        ok = _concat_normalized_parts(batch_paths, slideshow_output, temp_dir)
-                    except Exception as exc:
-                        log.warning("⚠️ [Переходы] Склейка готовых пакетов не удалась: %s", exc)
-                        ok = False
-                if ok:
-                    crossfade_outputs.append(slideshow_output)
-                    final_parts = [item[1] for item in prefix_items] + [slideshow_output]
-                else:
-                    # Safest last resort: standard hard cuts between all scenes.
-                    final_parts = [item[1] for item in normalized_items]
-        else:
-            final_parts = [item[1] for item in normalized_items]
-    else:
-        final_parts = [item[1] for item in normalized_items]
-
-    listing = temp_dir / f"{output_path.stem}_concat_inputs.txt"
-    _write_ffconcat_listing(final_parts, listing)
-
-    temp = output_path.with_suffix(".temp.mp4")
+    created: list[Path] = []
+    normalized = []
     try:
-        total_duration = sum(get_duration(path) or 0.0 for path in final_parts)
-        if not _run_concat_demuxer_with_fallback(
-            listing, temp, output_path, preserve_audio=preserve_audio,
-            context=output_path.name, duration_hint=total_duration or None,
-        ):
-            raise RuntimeError(f"Не удалось собрать {output_path.name} ни копированием, ни перекодированием")
+        for seq_idx, (source_idx, path, duration) in enumerate(indexed):
+            norm = temp_dir / f"concat_norm_{output_path.stem}_{seq_idx:04d}.mp4"
+            if not normalize_clip_for_concat(path, norm, target_duration=duration, preserve_audio=preserve_audio):
+                raise RuntimeError(f"normalization failed: {path.name}")
+            actual = float(duration) if duration is not None else (get_duration(norm) or 0.0)
+            normalized.append((source_idx, norm, actual))
+            created.append(norm)
+
+        # Transition metadata is indexed by the original video_parts list; missing
+        # legacy fields are interpreted as hard cuts for backward-compatible state.json.
+        def spec_after(source_index: int) -> dict[str, Any]:
+            if transitions and source_index < len(transitions):
+                item = transitions[source_index] or {}
+                return {"type": str(item.get("type", "cut")), "duration": max(0.0, float(item.get("duration", 0.0) or 0.0))}
+            if crossfade_duration > 0 and source_index >= transition_start_index:
+                return {"type": "dissolve", "duration": float(crossfade_duration)}
+            return {"type": "cut", "duration": 0.0}
+
+        prefix = [x for x in normalized if x[0] < transition_start_index]
+        slides = [x for x in normalized if x[0] >= transition_start_index]
+        # Merge contiguous hard-cut scenes into one stream-copy file each.
+        runs: list[tuple[Path, float]] = []
+        run_transitions: list[dict[str, Any]] = []
+        current: list[tuple[int, Path, float]] = []
+        for item in slides:
+            current.append(item)
+            boundary = spec_after(item[0])
+            if boundary["type"] in {"dissolve", "fadeblack"} and boundary["duration"] > 0:
+                run_path = current[0][1] if len(current) == 1 else temp_dir / f"{output_path.stem}_cutrun_{len(runs):04d}.mp4"
+                if len(current) > 1:
+                    if not _concat_normalized_parts([x[1] for x in current], run_path, temp_dir, preserve_audio=preserve_audio):
+                        raise RuntimeError("stream-copy concat of cut run failed")
+                    created.append(run_path)
+                runs.append((run_path, sum(x[2] for x in current)))
+                run_transitions.append({"type": boundary["type"], "duration": boundary["duration"]})
+                current = []
+        if current:
+            run_path = current[0][1] if len(current) == 1 else temp_dir / f"{output_path.stem}_cutrun_{len(runs):04d}.mp4"
+            if len(current) > 1:
+                if not _concat_normalized_parts([x[1] for x in current], run_path, temp_dir, preserve_audio=preserve_audio):
+                    raise RuntimeError("stream-copy concat of final cut run failed")
+                created.append(run_path)
+            runs.append((run_path, sum(x[2] for x in current)))
+
+        slide_output = None
+        if len(runs) == 1:
+            slide_output = runs[0][0]
+        elif len(runs) > 1:
+            slide_output = temp_dir / f"{output_path.stem}_mixed_transitions.mp4"
+            if not _render_crossfade_group([x[0] for x in runs], [x[1] for x in runs],
+                                           slide_output, temp_dir, preserve_audio, run_transitions):
+                # If transition render fails, retain every scene and preserve exact clock via hard cuts.
+                log.warning("[Transitions] Mixed xfade fallback to stream-copy hard cuts; all scenes retained.")
+                if not _concat_normalized_parts([x[0] for x in runs], slide_output, temp_dir, preserve_audio=preserve_audio):
+                    raise RuntimeError("fallback stream-copy concat failed")
+            created.append(slide_output)
+
+        final_parts = [x[1] for x in prefix]
+        if slide_output is not None:
+            final_parts.append(slide_output)
+        if not final_parts:
+            return False
+        listing = temp_dir / f"{output_path.stem}_concat_inputs.txt"
+        _write_ffconcat_listing(final_parts, listing)
+        temp = output_path.with_suffix(".temp.mp4")
+        total_duration = sum(get_duration(p) or 0.0 for p in final_parts)
+        if not _run_concat_demuxer_with_fallback(listing, temp, output_path, preserve_audio=preserve_audio,
+                                                  context=output_path.name, duration_hint=total_duration or None):
+            raise RuntimeError(f"Не удалось собрать {output_path.name}")
+        actual_total = get_duration(output_path)
+        expected_total = sum(x[2] for x in normalized)
+        if actual_total is not None and abs(actual_total - expected_total) >= 0.25:
+            log.error("[A/V Timing] concat duration mismatch: expected=%.3fs actual=%.3fs delta=%.3fs",
+                      expected_total, actual_total, actual_total - expected_total)
+        log.info("✅ [Montage] %s | scenes=%s | cut-runs=%s | transition boundaries=%s",
+                 output_path.name, len(normalized), len(runs), len(run_transitions))
+        return is_valid_video(output_path)
     finally:
-        for p in set(created_temp_paths + crossfade_outputs):
+        for p in set(created):
             try:
                 p.unlink(missing_ok=True)
             except Exception:
                 pass
 
-    log.info("✅ [Монтаж] Склейка готова: %s | частей=%s | crossfade=%s", output_path.name, len(final_parts), bool(can_crossfade and crossfade_duration > 0))
-    return is_valid_video(output_path)
+
+
+
 
 def ensure_resolution(video_path: Path, output_path: Path):
     try:
@@ -12685,7 +12858,7 @@ def add_audio_to_video(
         log.error("[Audio Mix] Не удалось определить длительность видео: %s", video_path)
         return False
 
-    voice_gain = round(random.uniform(*VOICE_VOLUME_RANGE), 3)
+    voice_gain = float(VOICE_VOLUME_GAIN)
     duration = f"{video_duration:.3f}"
     use_music = bool(music_path and music_path.exists() and ENABLE_BACKGROUND_MUSIC)
     has_source_audio = has_audio_stream(video_path)
@@ -12896,11 +13069,13 @@ def add_subtitles_to_video(
     try:
         staged_subtitle = _stage_subtitle_file_for_ffmpeg(subtitle_file)
         subtitle_ref = _ffmpeg_filter_quote(str(staged_subtitle.resolve()))
-        margin = random.randint(*SUBTITLE_MARGIN_V_RANGE)
-        font_size = random.randint(*SUBTITLE_FONT_SIZE_RANGE)
+        margin = SUBTITLE_MARGIN_V
+        font_size = SUBTITLE_FONT_SIZE
         style = (
             "FontName=Roboto Condensed Black,"
-            f"FontSize={font_size},MaxLines=2,WrapStyle=0,MarginV={margin}"
+            f"FontSize={font_size},MaxLines=2,WrapStyle=0,MarginV={margin},"
+            "PrimaryColour=&H00FFFFFF,OutlineColour=&HCC101010,BackColour=&H50000000,"
+            "BorderStyle=1,Outline=2,Shadow=1,Bold=0"
         )
         vf = f"subtitles=filename={subtitle_ref}:force_style='{style}'"
 
@@ -15189,7 +15364,8 @@ async def process_project(
             )
         )
 
-        if saved_intervals and all(x is not None for x in saved_intervals) and not timeline_shifted:
+        semantic_stale = "semantic-v2" not in saved_timeline_signature
+        if saved_intervals and all(x is not None for x in saved_intervals) and not timeline_shifted and not semantic_stale:
             intervals = [x for x in saved_intervals if x is not None]
             log.info(
                 "⏭️ [Resume] Используем сохранённый таймлайн: %s сцен, старт %.2fs",
@@ -15197,10 +15373,13 @@ async def process_project(
                 intro_duration,
             )
         elif USE_DYNAMIC_SLIDE_INTERVALS:
-            intervals = calculate_dynamic_slide_intervals(
-                audio_duration,
-                start_time=intro_duration,
+            semantic_scenes = plan_semantic_scene_intervals(
+                segments, audio_duration, intro_duration, min_dur=8.0, target_dur=15.0, max_dur=22.0
             )
+            intervals = [(float(x["start"]), float(x["end"])) for x in semantic_scenes]
+            if not intervals:
+                intervals = calculate_dynamic_slide_intervals(audio_duration, start_time=intro_duration)
+            log.info("[Semantic Planning] Построено %s сцен по Whisper-предложениям/паузам.", len(intervals))
             if timeline_shifted:
                 log.info(
                     "🔄 [Timing] Сохранённый таймлайн устарел; новые сцены считаются от %.2fs.",
@@ -15215,7 +15394,7 @@ async def process_project(
 
         timeline_signature = (
             f"intro={intro_duration:.3f}|audio={audio_duration:.3f}|"
-            f"n={len(intervals)}"
+            f"n={len(intervals)}|semantic-v2={SEMANTIC_TIMELINE_VERSION}|transitions={TRANSITION_RENDER_VERSION}"
         )
         state.data["timing"]["main_timeline_start"] = intro_duration
         state.data["timing"]["timeline_signature"] = timeline_signature
@@ -15228,6 +15407,9 @@ async def process_project(
 
         main_clips = []
         segment_texts = []
+        semantic_by_index = semantic_scenes if "semantic_scenes" in locals() and len(semantic_scenes) == len(intervals) else [
+            {"scene_break": False, "pause_before": 0.0} for _ in intervals
+        ]
 
         for idx, (start, end) in enumerate(intervals):
             old = existing_records.get(idx, {})
@@ -15241,6 +15423,11 @@ async def process_project(
                 "end": end,
                 "duration": max(0.05, end - start),
                 "text": text_slot,
+                "scene_break": bool(semantic_by_index[idx].get("scene_break", False)),
+                "media_type": "image",
+                "transition_out": "cut",
+                "transition_dur": 0.0,
+                "pause_before": float(semantic_by_index[idx].get("pause_before", 0.0) or 0.0),
                 "plan": old.get("plan", ""),
                 "prompt": old.get("prompt", "") if same_timeline else "",
                 "image_path": old.get(
@@ -15262,6 +15449,26 @@ async def process_project(
                 record["done"] = True
 
             main_clips.append(record)
+
+        scene_break_count = 0
+        for scene_idx, scene_record in enumerate(main_clips):
+            if scene_idx + 1 >= len(main_clips):
+                scene_record["transition_out"] = "cut"
+                scene_record["transition_dur"] = 0.0
+                continue
+            next_scene = main_clips[scene_idx + 1]
+            if not bool(next_scene.get("scene_break", False)):
+                scene_record["transition_out"] = "cut"
+                scene_record["transition_dur"] = 0.0
+                continue
+            scene_break_count += 1
+            pause = float(next_scene.get("pause_before", 0.0) or 0.0)
+            if pause >= 0.8 or scene_break_count % 3 == 0:
+                scene_record["transition_out"] = "fadeblack"
+                scene_record["transition_dur"] = round(random.uniform(0.45, 0.55), 3)
+            else:
+                scene_record["transition_out"] = "dissolve"
+                scene_record["transition_dur"] = round(random.uniform(0.35, 0.45), 3)
 
         state.data["main_clips"] = main_clips
         state.save()
@@ -15397,7 +15604,8 @@ async def process_project(
                 defer_character_locks=True,
             )
 
-        for idx, record in enumerate(state.data["main_clips"]):
+        prev_zooms: list[str] = []
+    for idx, record in enumerate(state.data["main_clips"]):
             output_path = Path(record["output_path"])
             image_path = Path(record["image_path"])
             scene_plan_for_effect = (
@@ -15789,7 +15997,9 @@ async def process_project(
                 characters=chars,
                 image_path=image_path,
                 scene_index=idx,
+                prev_zooms=prev_zooms,
             )
+            prev_zooms.append(str(motion_choice["zoom_dir"]))
             living_subject = bool(motion_choice["living_subject"])
             living_reason = str(motion_choice["reason"])
             parallax_strength = float(motion_choice["depth_strength"])
@@ -15958,8 +16168,13 @@ async def process_project(
                 )
             )
 
+        transition_specs = [{"type": "cut", "duration": 0.0}]
         for record in state.data["main_clips"]:
             all_parts.append((Path(record["output_path"]), float(record["duration"])))
+            transition_specs.append({
+                "type": str(record.get("transition_out", "cut")),
+                "duration": float(record.get("transition_dur", 0.0) or 0.0),
+            })
 
         no_audio = Path(state.data["montage"]["no_audio"])
         if not is_valid_video(no_audio):
@@ -15972,8 +16187,9 @@ async def process_project(
                 no_audio,
                 state.work_dir,
                 preserve_audio=False,
-                crossfade_duration=SLIDE_CROSSFADE_SECONDS,
+                crossfade_duration=0.0,
                 transition_start_index=transition_start_index,
+                transitions=transition_specs,
             ):
                 raise RuntimeError("Не удалось собрать видеомонтаж")
 
@@ -15982,6 +16198,14 @@ async def process_project(
             state.data["montage"]["done"] = True
             state.save()
 
+        # Verify the completed silent montage against the exact mastered narration clock.
+        audio_clock = get_duration(Path(str(state.data.get("audio", {}).get("path", ""))))
+        video_clock = get_duration(no_audio)
+        if audio_clock is not None and video_clock is not None:
+            delta = abs(video_clock - audio_clock)
+            log.info("[A/V Timing] video_no_audio=%.3fs | audio.wav=%.3fs | delta=%.3fs (target < 0.250s)", video_clock, audio_clock, delta)
+            if delta >= 0.25:
+                log.error("[A/V Timing] Длительности видео и озвучки расходятся на %.3fs; проверь таймлайн/переходы.", delta)
         # 8. Audio Mix
         state.set_stage("audio_mix")
         with_audio = Path(state.data["montage"]["with_audio"])
@@ -17085,6 +17309,9 @@ async def run_pipeline(
     visual_style_id: str = "realistic",
     text_provider: str = "gemini",
 ) -> None:
+    global ACTIVE_TTS_CHANNEL_NAME
+    ACTIVE_TTS_CHANNEL_NAME = str(channel_name or "").strip()
+    log.info("[TTS Voice] Канал=%s | активный голос=%s", ACTIVE_TTS_CHANNEL_NAME or "(default)", get_channel_tts_voice(ACTIVE_TTS_CHANNEL_NAME))
     selected_text_provider = set_active_text_provider(text_provider)
     if selected_text_provider == "groq" and not GROQ_API_KEYS:
         raise RuntimeError(f"Groq выбран, но API-ключи не загружены. Проверь {GROQ_KEYS_FILE} или groq_keys.txt рядом со скриптом.")
