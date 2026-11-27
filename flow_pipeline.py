@@ -11161,8 +11161,6 @@ def extract_whisper_sentences(segments, start_time: float, audio_duration: float
                     "end": float(current[-1]["end"]),
                     "text": text,
                     "pause_after": float(pause),
-                    "_first_word": current[0],
-                    "_last_word": current[-1],
                 })
             current = []
     return sentences
@@ -11224,6 +11222,60 @@ def calculate_pause_aligned_intervals(
     if result:
         result[-1]["end"] = float(audio_duration)
     return [x for x in result if x["end"] > x["start"]]
+
+
+def fit_semantic_scene_count(
+    scenes: list[dict[str, Any]], segments, target_count: int,
+    start_time: float, audio_duration: float,
+) -> list[dict[str, Any]]:
+    """Adjust semantic grouping to an existing project's scene count without extra Flow work."""
+    result = [dict(x) for x in scenes]
+    if not result or target_count <= 0:
+        return result
+    sentences = extract_whisper_sentences(segments, start_time, audio_duration)
+    by_id = {int(x["id"]): x for x in sentences}
+    while len(result) > target_count:
+        candidates = []
+        for i in range(len(result) - 1):
+            combined = float(result[i + 1]["end"]) - float(result[i]["start"])
+            pause = float(result[i + 1].get("pause_before", 0.0) or 0.0)
+            candidates.append((pause, abs(combined - 15.0), i))
+        _, _, index = min(candidates)
+        result[index]["end"] = result[index + 1]["end"]
+        result[index]["_sentence_to"] = result[index + 1].get("_sentence_to")
+        result.pop(index + 1)
+    while len(result) < target_count:
+        candidates = []
+        for i, scene in enumerate(result):
+            a, b = scene.get("_sentence_from"), scene.get("_sentence_to")
+            if a is None or b is None or int(b) <= int(a):
+                continue
+            candidates.append((float(scene["end"]) - float(scene["start"]), i))
+        if not candidates:
+            break
+        _, index = max(candidates)
+        scene = result[index]
+        a, b = int(scene["_sentence_from"]), int(scene["_sentence_to"])
+        possible = [k for k in range(a, b) if k in by_id and (k + 1) in by_id]
+        if not possible:
+            break
+        midpoint = (float(scene["start"]) + float(scene["end"])) * 0.5
+        split_id = min(possible, key=lambda k: abs((float(by_id[k]["end"]) + float(by_id[k + 1]["start"])) * 0.5 - midpoint))
+        cut, pause = _semantic_boundary_time(by_id[split_id], by_id[split_id + 1])
+        if cut - float(scene["start"]) < 6.5 or float(scene["end"]) - cut < 6.5:
+            break
+        second = dict(scene)
+        second["start"] = cut
+        second["scene_break"] = False
+        second["pause_before"] = pause
+        second["_sentence_from"] = split_id + 1
+        scene["end"] = cut
+        scene["_sentence_to"] = split_id
+        result.insert(index + 1, second)
+    if result:
+        result[0]["start"] = float(start_time)
+        result[-1]["end"] = float(audio_duration)
+    return result
 
 
 def plan_semantic_scene_intervals(
@@ -11319,13 +11371,29 @@ def plan_semantic_scene_intervals(
                                  "scene_break": bool(group.get("scene_break", False)) if pidx == 0 else False})
         # Merge tiny groups with the preceding group to avoid flash-scene cuts.
         merged = []
+        pending_short = None
         for group in repaired:
             chunk = [x for x in units if group["from"] <= x["id"] <= group["to"]]
             dur = float(chunk[-1]["end"]) - float(chunk[0]["start"])
-            if dur < 6.5 and merged:
-                merged[-1]["to"] = group["to"]
+            if dur < 6.5:
+                if merged:
+                    merged[-1]["to"] = group["to"]
+                elif pending_short is None:
+                    pending_short = dict(group)
+                else:
+                    pending_short["to"] = group["to"]
             else:
+                if pending_short is not None:
+                    group = dict(group)
+                    group["from"] = pending_short["from"]
+                    group["scene_break"] = pending_short.get("scene_break", False)
+                    pending_short = None
                 merged.append(dict(group))
+        if pending_short is not None:
+            if merged:
+                merged[-1]["to"] = pending_short["to"]
+            else:
+                merged.append(pending_short)
         all_groups.extend(merged)
 
     # Convert sentence ranges to exact pause-centred scene boundaries.
@@ -15371,6 +15439,11 @@ async def process_project(
             semantic_scenes = plan_semantic_scene_intervals(
                 segments, audio_duration, intro_duration, min_dur=8.0, target_dur=15.0, max_dur=22.0
             )
+            # Existing projects keep their previous scene count so semantic timing
+            # never increases the number of Flow image requests.
+            prior_count = sum(1 for item in saved_intervals if item is not None)
+            if prior_count and len(semantic_scenes) != prior_count:
+                semantic_scenes = fit_semantic_scene_count(semantic_scenes, segments, prior_count, intro_duration, audio_duration)
             intervals = [(float(x["start"]), float(x["end"])) for x in semantic_scenes]
             if not intervals:
                 intervals = calculate_dynamic_slide_intervals(audio_duration, start_time=intro_duration)
@@ -15389,7 +15462,7 @@ async def process_project(
 
         timeline_signature = (
             f"intro={intro_duration:.3f}|audio={audio_duration:.3f}|"
-            f"n={len(intervals)}|semantic-v2={SEMANTIC_TIMELINE_VERSION}|transitions={TRANSITION_RENDER_VERSION}"
+            f"n={len(intervals)}|semantic-v2={SEMANTIC_TIMELINE_VERSION}"
         )
         state.data["timing"]["main_timeline_start"] = intro_duration
         state.data["timing"]["timeline_signature"] = timeline_signature
