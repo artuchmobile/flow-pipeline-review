@@ -12047,8 +12047,8 @@ def choose_parallax_motion_profile(
     living, reason = scene_has_living_subject(record, scene_plan=scene_plan, characters=characters, image_path=None)
     raw_visual_prompt = " ".join([str(record.get("prompt", "")), str(record.get("visual_prompt", "")),
                                   str(record.get("scene_description", ""))])
-    raw_visual_prompt = re.split(r"(?im)^\\s*(?:STYLE LOCK|NEGATIVE(?: PROMPT)?|DO NOT|AVOID|INSTRUCTIONS?)\\s*[:\\-]", raw_visual_prompt)[0]
-    raw_visual_prompt = re.sub(r"(?i)\\b(?:no person|without people|no humans|first-person|third-person|no talking[- ]head)\\b", " ", raw_visual_prompt)
+    raw_visual_prompt = re.split(r"(?im)^\s*(?:STYLE LOCK|NEGATIVE(?: PROMPT)?|DO NOT|AVOID|INSTRUCTIONS?)\s*[:\-]", raw_visual_prompt)[0]
+    raw_visual_prompt = re.sub(r"(?i)\b(?:no person|without people|no humans|first-person|third-person|no talking[- ]head)\b", " ", raw_visual_prompt)
     prompt = raw_visual_prompt.lower()
     landscape_cues = re.compile(
         r"\b(?:landscape|wide shot|panorama|desert|mountain|mountains|valley|plain|road|trail|forest|woods|coast|ocean|sea|river|lake|field|horizon|skyline|cityscape|village|architecture|building|buildings|ruins|temple|castle|fortress|street|courtyard|interior|hall|room|corridor|canyon|cliff|waterfall|bridge|object|objects|still life|пейзаж|горы|пустыня|долина|дорога|лес|река|озеро|море|океан|поле|горизонт|здание|архитектура|руины|замок|улица|двор|интерьер|зал|комната|коридор|предмет)\b",
