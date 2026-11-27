@@ -4614,6 +4614,8 @@ def assign_main_video_insert_slots(main_clips, segments, intro_end_time, audio_d
             remainder=dict(clip)
             remainder["start"]=round(cut,3); remainder["end"]=round(end,3); remainder["duration"]=round(end-cut,3)
             remainder["media_type"]="image"; remainder["done"]=False; remainder["video_insert_assigned"]=True
+            remainder["scene_break"]=False
+            clip["transition_out"]="cut"; clip["transition_dur"]=0.0
             remainder["output_path"]=str(Path(clip["output_path"]).with_name(f"scene_insert_remainder_{i+1:04d}.mp4"))
             remainder["remainder_of_scene"]=i+1
             remainder_by_index[i]=remainder
