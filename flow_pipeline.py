@@ -13995,7 +13995,7 @@ async def build_intro(
             legacy_backup_dir = ensure_directory(state.work_dir / "intro_legacy_backup")
             legacy_assets = [
                 state.media_dir / pattern
-                for shot_index in range(1, INTRO_SHOT_COUNT + 1)
+                for shot_index in range(1, intro_count + 1)
                 for pattern in (f"intro_raw_{shot_index:02d}.mp4", f"intro_clip_{shot_index:02d}.mp4")
             ]
             if old_output and old_output.exists():
@@ -14129,7 +14129,7 @@ async def build_intro(
             if intro_hero_path and cast_mode in {"PROTAGONIST", "BOTH"}:
                 log.info("[Intro Reference] Shot %s/%s CAST=%s; прикрепляю эталон главного героя %s.", idx, intro_count, cast_mode, intro_hero_path.name)
             elif cast_mode == "NONE":
-                log.info("[Intro Reference] Shot %s/%s CAST=NONE; эталон героя не прикрепляется.", idx, INTRO_SHOT_COUNT)
+                log.info("[Intro Reference] Shot %s/%s CAST=NONE; эталон героя не прикрепляется.", idx, intro_count)
             else:
                 log.info("[Intro Reference] Shot %s/%s CAST=%s; secondary references=%s; герой-эталон не прикрепляется.", idx, intro_count, cast_mode, len(shot_references))
 
@@ -14214,7 +14214,7 @@ async def build_intro(
                 )
                 if not fallback_ok or not is_valid_video(raw_path):
                     raise FlowTechnicalError(
-                        f"Не удалось создать семантически соответствующий клип интро {idx}/{INTRO_SHOT_COUNT}. "
+                        f"Не удалось создать семантически соответствующий клип интро {idx}/{intro_count}. "
                         "Не подставляю чужой кадр; checkpoint сохранён для повторного запуска."
                     ) from exc
                 shutil.copy2(raw_path, clip_path)
@@ -14340,14 +14340,14 @@ async def build_intro(
         FLOW_INTRO_AUDIO_GAIN,
     )
     intro["actual_duration"] = get_duration(Path(intro["output"])) or actual
-    intro["target_duration"] = INTRO_TARGET_SECONDS
+    intro["target_duration"] = float(intro_plan["intro_end_time"])
     intro["done"] = is_valid_video(Path(intro["output"]))
     state.set_stage("intro_done" if intro["done"] else "intro")
     state.save()
 
     log.info(
-        "🎬 [Intro] Полная фактическая длительность: %.2fs; план: %s клипов примерно по %.1fs (около %.1fs); исходное аудио Flow подмешивается с gain=%.3f.",
-        intro["actual_duration"], INTRO_SHOT_COUNT, FLOW_CLIP_SECONDS, INTRO_TARGET_SECONDS, FLOW_INTRO_AUDIO_GAIN,
+        "🎬 [Intro] Полная фактическая длительность: %.2fs; план: %s клипов; беззвучный мастеринг и Whisper-синхронизация завершены.",
+        intro["actual_duration"], intro_count,
     )
     return intro["actual_duration"]
 
@@ -14914,7 +14914,7 @@ def project_missing_required_intro_clips(folder: Path) -> bool:
         # finalization may have renamed the project directory with a _DONE suffix.
         missing_intro_clip = any(
             not is_valid_video(media_dir / f"intro_clip_{idx:02d}.mp4")
-            for idx in range(1, INTRO_SHOT_COUNT + 1)
+            for idx in range(1, intro_count + 1)
         )
         intro_output = Path(str(intro.get("output", "") or ""))
         missing_intro_output = bool(intro.get("done")) and (
