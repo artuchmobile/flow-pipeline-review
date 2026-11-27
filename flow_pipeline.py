@@ -4597,7 +4597,8 @@ def assign_main_video_insert_slots(main_clips, segments, intro_end_time, audio_d
         eligible=[(i,c) for i,c in candidates if i not in selected and all(abs(i-j)>=3 for j in selected)]
         if eligible: selected.append(min(eligible,key=lambda x:abs((float(x[1]["start"])+float(x[1]["end"]))/2-target))[0])
     try:
-        prompt="Choose scene indexes for video inserts; prefer movement, travel, nature/weather, crowds and location changes; avoid static dialogue. Return JSON integer array.\n"+"\n".join(f'{i}: {c["start"]:.2f}-{c["end"]:.2f} {str(c.get("text",""))[:180]}' for i,c in candidates[:80])
+        zone_text="\n".join(f"ZONE {zone_index+1}: target={float(intro_end_time)+remaining*(lo+hi)/2:.1f}s range={float(intro_end_time)+remaining*lo:.1f}-{float(intro_end_time)+remaining*hi:.1f}s" for zone_index,(lo,hi) in enumerate(zones))
+        prompt="Choose one scene index per narrative zone below. Prioritize physical movement, travel, nature/weather, crowds and location/era changes; avoid static dialogue and face closeups. Keep at least two image scenes between selected indexes. Return only a JSON integer array in zone order.\n"+zone_text+"\nCANDIDATES:\n"+"\n".join(f'{i}: {c["start"]:.2f}-{c["end"]:.2f} {str(c.get("text",""))[:180]}' for i,c in candidates[:80])
         match=re.search(r"\[[\s\S]*?\]",str(call_text_api(prompt) or ""))
         proposed=json.loads(match.group(0)) if match else []
         valid=[]
