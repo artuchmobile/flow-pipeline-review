@@ -15716,6 +15716,8 @@ async def process_project(
             main_clips.append(record)
 
         scene_break_count = 0
+        last_fadeblack_scene = -999
+        last_fadeblack_time = -1e9
         for scene_idx, scene_record in enumerate(main_clips):
             if scene_idx + 1 >= len(main_clips):
                 scene_record["transition_out"] = "cut"
@@ -15728,9 +15730,13 @@ async def process_project(
                 continue
             scene_break_count += 1
             pause = float(next_scene.get("pause_before", 0.0) or 0.0)
-            if pause >= 0.8 or scene_break_count % 3 == 0:
+            next_start = float(next_scene.get("start", 0.0) or 0.0)
+            fadeblack_allowed = scene_idx - last_fadeblack_scene >= 4 and next_start - last_fadeblack_time >= 50.0
+            if pause >= 0.8 and fadeblack_allowed:
                 scene_record["transition_out"] = "fadeblack"
                 scene_record["transition_dur"] = round(random.uniform(0.45, 0.55), 3)
+                last_fadeblack_scene = scene_idx
+                last_fadeblack_time = next_start
             else:
                 scene_record["transition_out"] = "dissolve"
                 scene_record["transition_dur"] = round(random.uniform(0.35, 0.45), 3)
