@@ -15470,6 +15470,15 @@ async def process_project(
             prior_count = sum(1 for item in saved_intervals if item is not None)
             if prior_count and len(semantic_scenes) != prior_count:
                 semantic_scenes = fit_semantic_scene_count(semantic_scenes, segments, prior_count, intro_duration, audio_duration)
+            if prior_count and len(semantic_scenes) != prior_count:
+                log.warning("[Semantic Planning] Не удалось безопасно подогнать границы к прежнему числу сцен (%s); сохраняю прежний таймлайн, чтобы не увеличивать квоты Flow.", prior_count)
+                old_records_for_count = state.data.get("main_clips", [])
+                semantic_scenes = [
+                    {"start": float(item[0]), "end": float(item[1]),
+                     "scene_break": bool(old_records_for_count[i].get("scene_break", False)) if i < len(old_records_for_count) else False,
+                     "pause_before": float(old_records_for_count[i].get("pause_before", 0.0) or 0.0) if i < len(old_records_for_count) else 0.0}
+                    for i, item in enumerate(saved_intervals) if item is not None
+                ]
             intervals = [(float(x["start"]), float(x["end"])) for x in semantic_scenes]
             if not intervals:
                 intervals = calculate_dynamic_slide_intervals(audio_duration, start_time=intro_duration)
