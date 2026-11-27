@@ -11211,7 +11211,7 @@ def calculate_pause_aligned_intervals(
         groups.pop()
     result = []
     for i, group in enumerate(groups):
-        start = float(group[0]["start"]) if i == 0 else result[-1]["end"]
+        start = float(start_time) if i == 0 else result[-1]["end"]
         if i < len(groups) - 1:
             boundary, pause = _semantic_boundary_time(group[-1], groups[i + 1][0])
         else:
@@ -12606,9 +12606,7 @@ def _render_crossfade_group(
     if len(transitions) != len(input_paths) - 1:
         return False
     total_duration = sum(max(0.1, float(d)) for d in durations)
-    filters = []
-    for i in range(len(input_paths)):
-        filters.append(f"[{i}:v]fps={FPS},settb=AVTB,format=yuv420p[v{i}]")
+    filters = [f"[0:v]fps={FPS},settb=AVTB,format=yuv420p[v0]"]
     current_label = "v0"
     accumulated_duration = float(durations[0])
     for i in range(1, len(input_paths)):
@@ -15405,7 +15403,9 @@ async def process_project(
         main_clips = []
         segment_texts = []
         semantic_by_index = semantic_scenes if "semantic_scenes" in locals() and len(semantic_scenes) == len(intervals) else [
-            {"scene_break": False, "pause_before": 0.0} for _ in intervals
+            {"scene_break": bool(existing_records.get(i, {}).get("scene_break", False)),
+             "pause_before": float(existing_records.get(i, {}).get("pause_before", 0.0) or 0.0)}
+            for i in range(len(intervals))
         ]
 
         for idx, (start, end) in enumerate(intervals):
