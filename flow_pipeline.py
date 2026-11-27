@@ -12766,13 +12766,14 @@ def concatenate_videos(
 
         prefix = [x for x in normalized if x[0] < transition_start_index]
         slides = [x for x in normalized if x[0] >= transition_start_index]
+        last_source_index = max((x[0] for x in slides), default=-1)
         # Merge contiguous hard-cut scenes into one stream-copy file each.
         runs: list[tuple[Path, float]] = []
         run_transitions: list[dict[str, Any]] = []
         current: list[tuple[int, Path, float]] = []
         for item in slides:
             current.append(item)
-            boundary = spec_after(item[0])
+            boundary = spec_after(item[0]) if item[0] < last_source_index else {"type": "cut", "duration": 0.0}
             if boundary["type"] in {"dissolve", "fadeblack"} and boundary["duration"] > 0:
                 run_path = current[0][1] if len(current) == 1 else temp_dir / f"{output_path.stem}_cutrun_{len(runs):04d}.mp4"
                 if len(current) > 1:
