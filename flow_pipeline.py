@@ -291,7 +291,7 @@ PROXY_CONNECT_COOLDOWN_SECONDS = 60
 FLOW_CLIP_SECONDS = 8.0
 INTRO_SHOT_COUNT = 8
 INTRO_TARGET_SECONDS = FLOW_CLIP_SECONDS * INTRO_SHOT_COUNT  # about 64 seconds at 8s per Flow clip
-INTRO_STORYBOARD_VERSION = "eight-shot-64s-v9-whisper-timecoded-semantic-alignment"
+INTRO_STORYBOARD_VERSION = "floating-intro-8-11-v1-whisper-silence-aligned"
 ENABLE_FLOW_INTRO_DEFAULT = True
 
 # ------------------------------------------------------------
@@ -12526,7 +12526,7 @@ def _is_native_fhd_h264(path: Path, target_duration: float | None = None) -> boo
         result = subprocess.run(
             [
                 "ffprobe", "-v", "error", "-select_streams", "v:0",
-                "-show_entries", "stream=codec_name,width,height,pix_fmt,avg_frame_rate",
+                "-show_entries", "stream=codec_name,profile,width,height,pix_fmt,avg_frame_rate,sample_aspect_ratio,time_base",
                 "-of", "json", str(path),
             ],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -12547,6 +12547,9 @@ def _is_native_fhd_h264(path: Path, target_duration: float | None = None) -> boo
             and int(stream.get("width", 0)) == 1920
             and int(stream.get("height", 0)) == 1080
             and stream.get("pix_fmt") == "yuv420p"
+            and stream.get("profile") in {"High", "Main"}
+            and stream.get("sample_aspect_ratio") == "1:1"
+            and stream.get("time_base") == "1/15360"
             and abs(fps_value - FPS) < 0.02
         ):
             return False
