@@ -4593,8 +4593,19 @@ def assign_main_video_insert_slots(main_clips, segments, intro_end_time, audio_d
         prompt="Choose scene indexes for video inserts; prefer movement, travel, nature/weather, crowds and location changes; avoid static dialogue. Return JSON integer array.\n"+"\n".join(f'{i}: {c["start"]:.2f}-{c["end"]:.2f} {str(c.get("text",""))[:180]}' for i,c in candidates[:80])
         match=re.search(r"\[[\s\S]*?\]",str(call_text_api(prompt) or ""))
         proposed=json.loads(match.group(0)) if match else []
-        valid=[int(x) for x in proposed if isinstance(x,int) and any(x==i for i,_ in candidates)]
-        if valid: selected=valid[:len(zones)]
+        valid=[]
+        for value in proposed:
+            if isinstance(value,int) and any(value==i for i,_ in candidates) and value not in valid and all(abs(value-j)>=3 for j in valid):
+                valid.append(value)
+        if valid:
+            selected=valid[:len(zones)]
+            for fallback_index in selected.copy():
+                pass
+            if len(selected)<len(zones):
+                for fallback_index,_ in candidates:
+                    if fallback_index not in selected and all(abs(fallback_index-j)>=3 for j in selected):
+                        selected.append(fallback_index)
+                        if len(selected)>=len(zones): break
     except Exception as exc: log.warning("[Veo Inserts] LLM selection failed; using zone fallback: %s",exc)
     remainder_by_index={}
     for i in selected:
