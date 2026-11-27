@@ -4565,15 +4565,22 @@ def plan_floating_intro(segments, audio_duration):
 
 
 def _nearest_whisper_cut(segments, target, lo, hi):
-    cuts=[]
+    words=[]
     for segment in segments or []:
         if not isinstance(segment,dict): continue
         for word in (segment.get("words") or [segment]):
             try:
-                end=float(word.get("end",segment.get("end",0)))
-                if lo<=end<=hi: cuts.append(end)
+                words.append((float(word.get("start",segment.get("start",0.0))),float(word.get("end",segment.get("end",0.0)))))
             except Exception: pass
-    return min(cuts,key=lambda x:abs(x-target)) if cuts else min(hi,max(lo,target))
+    words.sort()
+    candidates=[]
+    for index,(_,end) in enumerate(words):
+        next_start=words[index+1][0] if index+1<len(words) else end
+        gap=max(0.0,next_start-end)
+        point=end+gap*0.5 if gap>0.0 else end
+        if lo<=point<=hi: candidates.append(point)
+    return min(candidates,key=lambda x:abs(x-target)) if candidates else min(hi,max(lo,target))
+
 
 
 def assign_main_video_insert_slots(main_clips, segments, intro_end_time, audio_duration):
