@@ -11,6 +11,7 @@ import os
 import random
 import re
 import shutil
+import struct
 import subprocess
 import threading
 import tempfile
@@ -18,6 +19,7 @@ import time
 import urllib.parse
 import urllib.request
 import unicodedata
+import numpy as np
 from collections import defaultdict
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
@@ -30,7 +32,8 @@ import requests
 from PIL import Image, ImageOps
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 from adguard_rotator import rotate_adguard_windows_vpn
-PIPELINE_VERSION = "2026-11-27-TIMECODED-INTRO-SEMANTIC-ALIGNMENT-PROVENANCE-REPORT-V74"
+PIPELINE_VERSION = "2026-11-27-UNIFIED-MASTERING-CLEAN-EXPORT-V75"
+FFMPEG_BIN = shutil.which("ffmpeg") or "ffmpeg"
 
 # ============================================================================
 # CONFIG
@@ -310,11 +313,13 @@ SUBTITLE_FONT_SIZE_RANGE = (24, 26)
 # Restored visual-variation / Ken Burns parameters from the original montage.
 SLIDE_MIN_DUR = 14.0
 SLIDE_MAX_DUR = 16.0
-AUDIO_PITCH_JITTER = (0.992, 1.008)
+AUDIO_PITCH_JITTER = (0.988, 1.012)
 AUDIO_TEMPO_JITTER = (0.995, 1.005)
 CROP_PERCENT_RANGE = (0.015, 0.045)
 FILM_GRAIN_STRENGTH = (1, 2)
-ENABLE_PARALLAX_FILM_GRAIN = False  # preserve fine source detail by default
+ENABLE_PARALLAX_FILM_GRAIN = True
+FFMPEG_CLEAN_META_VIDEO = ["-map_metadata", "-1", "-map_chapters", "-1", "-fflags", "+bitexact", "-flags:v", "+bitexact"]
+FFMPEG_CLEAN_META_AV = ["-map_metadata", "-1", "-map_chapters", "-1", "-fflags", "+bitexact", "-flags:v", "+bitexact", "-flags:a", "+bitexact"]
 COLOR_CONTRAST_JITTER = (0.985, 1.025)
 COLOR_BRIGHTNESS_JITTER = (-0.012, 0.018)
 COLOR_SATURATION_JITTER = (0.96, 1.04)
@@ -852,72 +857,57 @@ def preview_image_has_delivery_size(path: Path) -> bool:
         return False
 
 
-def normalize_preview_image_1280x720(path: Path) -> bool:
-    """Center-crop/resize one final preview to exact 1280x720 without stretching.
-
-    The source composition is preserved as much as possible: EXIF orientation is
-    applied first, then a centered 16:9 cover crop is resized with Lanczos.
-    The original file is replaced atomically only after the temporary image passes
-    an image-integrity and dimension check.
-    """
+def normalize_preview_image_1280x720(path: Path, apply_finishing: bool = True) -> bool:
+    """Export a clean 1280x720 RGB preview; optionally apply the thumbnail finish."""
     temp_path: Path | None = None
     try:
         if not path.is_file():
             return False
         with Image.open(path) as source:
             oriented = ImageOps.exif_transpose(source)
-            if oriented.size == PREVIEW_OUTPUT_SIZE and oriented.mode == "RGB":
-                return True
-
-            icc_profile = source.info.get("icc_profile")
-            # Flatten transparent previews onto white rather than introducing
-            # black/undefined pixels when converting to a standard RGB thumbnail.
             if "A" in oriented.getbands() or "transparency" in source.info:
                 rgba = oriented.convert("RGBA")
                 white_bg = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
-                oriented_rgb = Image.alpha_composite(white_bg, rgba).convert("RGB")
+                rgb = Image.alpha_composite(white_bg, rgba).convert("RGB")
             else:
-                oriented_rgb = oriented.convert("RGB")
-
-            fitted = ImageOps.fit(
-                oriented_rgb,
-                PREVIEW_OUTPUT_SIZE,
-                method=Image.Resampling.LANCZOS,
-                centering=(0.5, 0.5),
-            )
-
-        suffix = path.suffix.casefold()
-        image_format = {
-            ".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG",
-            ".webp": "WEBP", ".bmp": "BMP",
-        }.get(suffix)
+                rgb = oriented.convert("RGB")
+            if apply_finishing:
+                angle = random.choice((-1, 1)) * random.uniform(0.30, 0.55)
+                rotated = rgb.rotate(angle, resample=Image.Resampling.BICUBIC, expand=False)
+                edge = random.uniform(0.016, 0.024)
+                left, top = int(rotated.width * edge), int(rotated.height * edge)
+                right, bottom = max(left + 1, int(rotated.width * (1.0 - edge))), max(top + 1, int(rotated.height * (1.0 - edge)))
+                cropped = rotated.crop((left, top, right, bottom))
+                fitted = ImageOps.fit(cropped, PREVIEW_OUTPUT_SIZE, method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+                pixels = np.asarray(fitted, dtype=np.float32) / 255.0
+                pixels = np.power(np.clip(pixels, 0.0, 1.0), random.uniform(0.985, 1.015)) * 255.0
+                pixels += np.random.normal(0.0, random.uniform(1.1, 1.7), pixels.shape).astype(np.float32)
+                finished = Image.fromarray(np.clip(pixels, 0, 255).astype(np.uint8), mode="RGB")
+            else:
+                fitted = ImageOps.fit(rgb, PREVIEW_OUTPUT_SIZE, method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+                finished = Image.fromarray(np.asarray(fitted, dtype=np.uint8), mode="RGB")
+        image_format = {".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG", ".webp": "WEBP", ".bmp": "BMP"}.get(path.suffix.casefold())
         if image_format is None:
             log.warning("[Preview] Неподдерживаемый формат превью: %s", path)
             return False
-
         temp_path = path.with_name(f".{path.stem}.1280x720.tmp{path.suffix}")
-        save_options: dict[str, Any] = {}
-        if icc_profile:
-            save_options["icc_profile"] = icc_profile
+        options: dict[str, Any] = {}
         if image_format == "JPEG":
-            save_options.update({"quality": 95, "optimize": True, "progressive": True})
+            options.update({"quality": random.randint(90, 93), "optimize": True, "progressive": True})
         elif image_format == "PNG":
-            save_options.update({"optimize": True, "compress_level": 6})
+            options.update({"optimize": True, "compress_level": 6})
         elif image_format == "WEBP":
-            save_options.update({"quality": 95, "method": 6})
-        fitted.save(temp_path, format=image_format, **save_options)
-
+            options.update({"quality": 92, "method": 6})
+        finished.save(temp_path, format=image_format, **options)
         with Image.open(temp_path) as check:
             check.verify()
         with Image.open(temp_path) as check:
-            if check.size != PREVIEW_OUTPUT_SIZE:
-                raise RuntimeError(f"получен размер {check.size}, ожидался {PREVIEW_OUTPUT_SIZE}")
-
+            if check.size != PREVIEW_OUTPUT_SIZE or check.mode not in {"RGB", "L"}:
+                raise RuntimeError(f"неверный экспорт {check.size}/{check.mode}")
+            if check.info.get("icc_profile") or check.info.get("exif"):
+                raise RuntimeError("в экспорт попали ICC/EXIF-метаданные")
         temp_path.replace(path)
-        log.info(
-            "✅ [Preview] Приведено к %sx%s: %s",
-            PREVIEW_OUTPUT_WIDTH, PREVIEW_OUTPUT_HEIGHT, path.name,
-        )
+        log.info("✅ [Preview] Чистый экспорт %sx%s (%s): %s", PREVIEW_OUTPUT_WIDTH, PREVIEW_OUTPUT_HEIGHT, "finished" if apply_finishing else "original", path.name)
         return True
     except Exception as exc:
         log.error("[Preview] Не удалось привести %s к 1280x720: %s", path, exc)
@@ -928,6 +918,7 @@ def normalize_preview_image_1280x720(path: Path) -> bool:
                 temp_path.unlink(missing_ok=True)
             except OSError:
                 pass
+
 
 
 # Character-reference similarity checks are intentionally disabled in the pipeline.
@@ -3216,6 +3207,37 @@ def audio_worker_gemini(q: Queue, chunk_list: list[str], chunk_dir: Path, retry_
         q.task_done()
 
 
+def master_voice_audio(input_wav: Path, output_wav: Path) -> bool:
+    """Master narration in one FFmpeg pass before Whisper transcription."""
+    if not input_wav.is_file():
+        log.error("[Voice Master] Нет исходного аудио: %s", input_wav)
+        return False
+    ensure_directory(output_wav.parent)
+    temp_output = output_wav.with_name(output_wav.stem + ".mastering.tmp.wav")
+    temp_output.unlink(missing_ok=True)
+    pitch, tempo = random.uniform(*AUDIO_PITCH_JITTER), random.uniform(*AUDIO_TEMPO_JITTER)
+    ap1, ap2 = random.uniform(600.0, 950.0), random.uniform(2100.0, 2900.0)
+    eq1, eq2 = random.uniform(-0.8, 0.8), random.uniform(-0.8, 0.8)
+    chain = (f"aresample=44100,asetrate=44100*{pitch:.5f},aresample=44100,atempo={tempo / pitch:.5f},"
+        "highpass=f=65,lowpass=f=15000,"
+        f"allpass=f={ap1:.1f}:width_type=q:w=1.0,allpass=f={ap2:.1f}:width_type=q:w=1.0,"
+        f"equalizer=f=350:t=q:w=1.0:g={eq1:.3f},equalizer=f=3200:t=q:w=1.0:g={eq2:.3f},"
+        "acompressor=threshold=0.12:ratio=2.0:attack=20:release=250:makeup=1.0:knee=2.0:detection=rms,loudnorm=I=-16:TP=-1.5:LRA=4.5")
+    fc = f"[0:a]{chain}[voice];anoisesrc=color=pink:sample_rate=44100:amplitude=0.0007[room];[voice][room]amix=inputs=2:duration=first:normalize=0:dropout_transition=0[mix]"
+    cmd = [FFMPEG_BIN, "-y", "-i", str(input_wav), "-filter_complex", fc, "-map", "[mix]", "-vn", "-ar", "44100", "-ac", "1", "-c:a", "pcm_s16le", "-map_metadata", "-1", "-fflags", "+bitexact", "-flags:a", "+bitexact", str(temp_output)]
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=900)
+        if not is_valid_audio(temp_output):
+            raise RuntimeError("mastered WAV failed validation")
+        temp_output.replace(output_wav)
+        log.info("[Voice Master] 44.1 kHz mono PCM готов; pitch=%.5f tempo=%.5f", pitch, tempo)
+        return True
+    except Exception as exc:
+        log.error("[Voice Master] Ошибка обработки %s: %s", input_wav.name, exc)
+        temp_output.unlink(missing_ok=True)
+        return False
+
+
 def generate_audio_gemini_sync(text: str, temp_dir: Path, output_file: Path) -> bool:
     if not text.strip():
         return False
@@ -3273,25 +3295,9 @@ def generate_audio_gemini_sync(text: str, temp_dir: Path, output_file: Path) -> 
         check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
 
-    log.info(
-        "[TTS Audio] Applying speech stabilizer: chunk RMS target=0.15, "
-        "compressor ratio=2:1, integrated target=-16 LUFS, true peak=-1.5 dBTP, LRA=4.5 LU."
-    )
-    subprocess.run(
-        [
-            "ffmpeg", "-y", "-i", str(raw_audio),
-            "-af", (
-                # Gentle speech-level compression reduces loud/quiet phrase swings;
-                # final loudnorm sets overall loudness and protects true peaks.
-                "acompressor=threshold=0.12:ratio=2.0:attack=20:release=250:"
-                "makeup=1.0:knee=2.0:detection=rms,"
-                "loudnorm=I=-16:TP=-1.5:LRA=4.5"
-            ),
-            "-ar", "44100", "-c:a", "pcm_s16le",
-            str(output_file)
-        ],
-        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-    )
+    log.info("[TTS Audio] Applying unified voice mastering before Whisper.")
+    if not master_voice_audio(raw_audio, output_file):
+        return False
 
     shutil.rmtree(chunk_dir, ignore_errors=True)
     return is_valid_audio(output_file)
@@ -11182,7 +11188,7 @@ def render_slide(
             if not vpy_path.exists():
                 return False
             temp_out=output_path.with_suffix('.temp.mp4')
-            grain=random.randint(*FILM_GRAIN_STRENGTH)
+            grain=1 if ACTIVE_VISUAL_STYLE_ID in {"comic_explainer", "cartoon_2d"} else random.randint(*FILM_GRAIN_STRENGTH)
             contrast=round(random.uniform(*COLOR_CONTRAST_JITTER),3)
             brightness=round(random.uniform(*COLOR_BRIGHTNESS_JITTER),3)
             saturation=round(random.uniform(*COLOR_SATURATION_JITTER),3)
@@ -11191,14 +11197,14 @@ def render_slide(
                 "🎛️ [Монтаж] Grain=%s Contrast=%.3f Brightness=%.3f Saturation=%.3f Bitrate=%s",
                 grain,contrast,brightness,saturation,bitrate,
             )
-            vf=f"noise=c1s={grain}:c0f=u,eq=contrast={contrast}:brightness={brightness}:saturation={saturation}"
+            vf=f"noise=alls={grain}:allf=t+u,eq=contrast={contrast}:brightness={brightness}:saturation={saturation}"
             encoder=HW_ENCODER if attempt==0 else 'libx264'
             preset=ENCODER_PRESET if attempt==0 else 'fast'
             rc=['-rc','vbr','-b:v',bitrate,'-maxrate','12000k'] if attempt==0 else ['-crf','18','-b:v',bitrate]
 
             if shutil.which('vspipe'):
                 p1=subprocess.Popen(['vspipe',str(vpy_path),'-c','y4m','-'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
-                cmd=['ffmpeg','-y','-i','pipe:','-vf',vf,'-c:v',encoder,'-preset',preset,*rc,'-pix_fmt','yuv420p','-r',str(fps),'-t',str(duration),str(temp_out)]
+                cmd=['ffmpeg','-y','-i','pipe:','-vf',vf,'-c:v',encoder,'-preset',preset,*rc,'-pix_fmt','yuv420p','-r',str(fps),'-t',str(duration),*FFMPEG_CLEAN_META_VIDEO,str(temp_out)]
                 p2=subprocess.Popen(cmd,stdin=p1.stdout,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
                 p1.stdout.close()
                 try:
@@ -11214,7 +11220,7 @@ def render_slide(
                 fade=min(float(fade_out_dur), max(0.05,float(duration)-0.05))
                 fade_tmp=output_path.with_suffix('.fade_temp.mp4')
                 subprocess.run(
-                    ['ffmpeg','-y','-i',str(temp_out),'-vf',f'fade=t=out:st={max(0.0,duration-fade):.3f}:d={fade:.3f}','-c:v',encoder,'-preset',preset,*rc,'-pix_fmt','yuv420p','-r',str(fps),str(fade_tmp)],
+                    ['ffmpeg','-y','-i',str(temp_out),'-vf',f'fade=t=out:st={max(0.0,duration-fade):.3f}:d={fade:.3f}','-c:v',encoder,'-preset',preset,*rc,'-pix_fmt','yuv420p','-r',str(fps),*FFMPEG_CLEAN_META_VIDEO,str(fade_tmp)],
                     check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
                 )
                 fade_tmp.replace(output_path)
@@ -11236,24 +11242,23 @@ def render_slide(
 
 
 def image_to_clip(image_path: Path, output_path: Path, duration: float) -> bool:
-    # Fallback/simple renderer used only when a previous project already contains
-    # an image clip but the restored Ken Burns renderer is unavailable.
-    cmd=[
-        'ffmpeg','-y','-loop','1','-i',str(image_path),'-t',f'{duration:.3f}',
-        '-vf','scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1',
-        '-r',str(FPS),'-pix_fmt','yuv420p','-c:v',HW_ENCODER,'-preset',ENCODER_PRESET,'-b:v','8000k','-an',str(output_path)
-    ]
-    try:
-        subprocess.run(cmd,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        return is_valid_video(output_path)
-    except Exception:
-        fallback=[x for x in cmd if x not in ['-b:v','6000k']]
-        i=fallback.index(HW_ENCODER); fallback[i]='libx264'; fallback[i+1]='fast'; fallback += ['-crf','18']
+    """Fallback still renderer with the same visual finish as the primary scene renderer."""
+    angle = math.radians(random.choice((-1, 1)) * random.uniform(0.25, 0.45))
+    contrast, brightness, saturation = random.uniform(*COLOR_CONTRAST_JITTER), random.uniform(*COLOR_BRIGHTNESS_JITTER), random.uniform(*COLOR_SATURATION_JITTER)
+    grain = 1 if ACTIVE_VISUAL_STYLE_ID in {"comic_explainer", "cartoon_2d"} else random.randint(*FILM_GRAIN_STRENGTH)
+    vf = f"rotate={angle:.9f}:ow=iw:oh=ih:bilinear=1,crop=iw*0.965:ih*0.965,scale=1920:1080:flags=lanczos,eq=contrast={contrast:.4f}:brightness={brightness:.4f}:saturation={saturation:.4f},noise=alls={grain}:allf=t+u,setsar=1"
+    bitrate = f"{random.randint(*VIDEO_BITRATE_RANGE)}k"
+    base = [FFMPEG_BIN, "-y", "-loop", "1", "-i", str(image_path), "-t", f"{duration:.3f}", "-vf", vf, "-r", str(FPS), "-pix_fmt", "yuv420p", "-an"]
+    attempts = [base + ["-c:v", HW_ENCODER, "-preset", ENCODER_PRESET, "-b:v", bitrate, "-maxrate", "12000k", *FFMPEG_CLEAN_META_VIDEO, str(output_path)], base + ["-c:v", "libx264", "-preset", "fast", "-crf", "18", *FFMPEG_CLEAN_META_VIDEO, str(output_path)]]
+    for cmd in attempts:
         try:
-            subprocess.run(fallback,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-            return is_valid_video(output_path)
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=600)
+            if is_valid_video(output_path):
+                return True
         except Exception:
-            return False
+            output_path.unlink(missing_ok=True)
+    return False
+
 
 
 
@@ -11703,12 +11708,16 @@ def render_parallax_slide(
     out_y_grid, out_x_grid = np.mgrid[0:output_h, 0:output_w].astype(np.float32)
     out_x_centered = out_x_grid - output_w * 0.5
     out_y_centered = out_y_grid - output_h * 0.5
+    rotation_angle = math.radians(random.choice((-1, 1)) * random.uniform(0.25, 0.45))
+    rotation_cos, rotation_sin = math.cos(rotation_angle), math.sin(rotation_angle)
+    rot_x_centered = out_x_centered * rotation_cos - out_y_centered * rotation_sin
+    rot_y_centered = out_x_centered * rotation_sin + out_y_centered * rotation_cos
     temp_path = output_path.with_suffix(".parallax-temp.mp4")
     ensure_directory(output_path.parent)
 
     # Keep the existing visual character controls, but combine them with the
     # relative displacement of foreground and background from the depth map.
-    grain = random.randint(*FILM_GRAIN_STRENGTH)
+    grain = 1 if ACTIVE_VISUAL_STYLE_ID in {"comic_explainer", "cartoon_2d"} else random.randint(*FILM_GRAIN_STRENGTH)
     contrast = round(random.uniform(*COLOR_CONTRAST_JITTER), 3)
     brightness = round(random.uniform(*COLOR_BRIGHTNESS_JITTER), 3)
     saturation = round(random.uniform(*COLOR_SATURATION_JITTER), 3)
@@ -11717,7 +11726,7 @@ def render_parallax_slide(
         f"eq=contrast={contrast}:brightness={brightness}:saturation={saturation}",
     ]
     if ENABLE_PARALLAX_FILM_GRAIN and grain > 0:
-        vf_parts.append(f"noise=c1s={grain}:c0f=u")
+        vf_parts.append(f"noise=alls={grain}:allf=t+u")
     vf_parts.append("setsar=1,format=yuv420p")
     if fade_out_dur > 0:
         fade = min(float(fade_out_dur), max(0.05, float(duration) - 0.05))
@@ -11757,14 +11766,14 @@ def render_parallax_slide(
             # Convert output FHD pixels to source-canvas pixels with the same scale on
             # both axes. Using the smaller ratio fills the FHD frame while preserving
             # aspect ratio (a few source pixels may be cropped horizontally).
-            output_pixel_scale = min(canvas_w / output_w, canvas_h / output_h)
+            output_pixel_scale = min(canvas_w / output_w, canvas_h / output_h) * 0.97
             if preserve_headroom:
                 visible_h = output_h * output_pixel_scale / scale
                 vertical_room = max(0.0, canvas_h - visible_h)
                 cam_cy -= 0.34 * vertical_room
 
-            map_x_out = cam_cx + out_x_centered * output_pixel_scale / scale
-            map_y_out = cam_cy + out_y_centered * output_pixel_scale / scale
+            map_x_out = cam_cx + rot_x_centered * output_pixel_scale / scale
+            map_y_out = cam_cy + rot_y_centered * output_pixel_scale / scale
             map_x_out = map_x_out.astype(np.float32)
             map_y_out = map_y_out.astype(np.float32)
 
@@ -11803,7 +11812,7 @@ def render_parallax_slide(
             "-vf", video_filter,
             "-c:v", encoder, *encoder_args,
             "-pix_fmt", "yuv420p", "-an", "-t", f"{duration:.3f}",
-            str(temp_path),
+            *FFMPEG_CLEAN_META_VIDEO, str(temp_path),
         ]
         proc = None
         try:
@@ -11844,6 +11853,58 @@ def render_parallax_slide(
 
     temp_path.unlink(missing_ok=True)
     raise RuntimeError(f"Не удалось закодировать 2.5D-слайд: {last_error}")
+
+
+def audit_mp4_container(path: Path) -> list[str]:
+    """Inspect top-level MP4 boxes; skip mdat payloads and inspect moov metadata."""
+    issues: list[str] = []
+    if not path.is_file():
+        return ["file_missing"]
+    size = path.stat().st_size
+    markers = (b"lavf", b"lavc", b"google", b"encoder", b"writing application", b"creation_time", b"com.apple.quicktime", b"handler_name")
+    try:
+        with path.open("rb") as media:
+            while media.tell() + 8 <= size:
+                start = media.tell()
+                head = media.read(8)
+                if len(head) != 8:
+                    break
+                box_size, box_type = struct.unpack(">I4s", head)
+                header_size = 8
+                if box_size == 1:
+                    ext = media.read(8)
+                    if len(ext) != 8:
+                        issues.append("truncated_extended_box")
+                        break
+                    box_size = struct.unpack(">Q", ext)[0]
+                    header_size = 16
+                elif box_size == 0:
+                    box_size = size - start
+                if box_size < header_size or start + box_size > size:
+                    issues.append(f"invalid_box_size:{box_type.decode('latin1', errors='replace')}")
+                    break
+                box_name = box_type.decode("latin1", errors="replace")
+                if box_type == b"uuid":
+                    issues.append(f"top_level_uuid_box@{start}")
+                payload_size = box_size - header_size
+                if box_type == b"mdat":
+                    media.seek(payload_size, os.SEEK_CUR)
+                elif box_type in {b"moov", b"udta", b"meta"}:
+                    payload = media.read(min(payload_size, 64 * 1024 * 1024))
+                    lower = payload.lower()
+                    for marker in markers:
+                        if marker in lower:
+                            issues.append(f"service_tag:{marker.decode('ascii', errors='replace')}@{box_name}")
+                    if len(payload) < payload_size:
+                        media.seek(payload_size - len(payload), os.SEEK_CUR)
+                else:
+                    media.seek(payload_size, os.SEEK_CUR)
+                if media.tell() <= start:
+                    issues.append("box_reader_stalled")
+                    break
+    except Exception as exc:
+        issues.append(f"audit_error:{type(exc).__name__}:{exc}")
+    return sorted(set(issues))
 
 
 def inspect_mp4_provenance(path: Path) -> dict[str, Any]:
@@ -12222,7 +12283,7 @@ def _run_concat_demuxer_with_fallback(
         "-f", "concat", "-safe", "0", "-i", str(listing),
     ]
     strategies: list[tuple[str, list[str]]] = [
-        ("stream-copy", ["-c", "copy"]),
+        ("stream-copy", ["-c", "copy", *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO)]),
     ]
     audio_args = (
         ["-map", "0:a:0?", "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2"]
@@ -12235,11 +12296,13 @@ def _run_concat_demuxer_with_fallback(
             "-c:v", HW_ENCODER, "-preset", ENCODER_PRESET,
             "-b:v", "8000k", "-maxrate", "10000k",
             "-pix_fmt", "yuv420p", "-r", str(FPS), "-movflags", "+faststart",
+            *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO),
         ]),
         ("software-reencode", [
             "-map", "0:v:0", *audio_args,
             "-c:v", "libx264", "-preset", "fast", "-crf", "18",
             "-pix_fmt", "yuv420p", "-r", str(FPS), "-movflags", "+faststart",
+            *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO),
         ]),
     ])
     failures: list[str] = []
@@ -12649,7 +12712,7 @@ def add_audio_to_video(
             "-i", str(music_path), "-filter_complex", filter_complex,
             "-map", "0:v:0", "-map", "[a]", "-c:v", "copy", "-c:a", "aac",
             "-ar", "44100", "-b:a", "192k", "-ac", "2", "-t", duration, "-shortest",
-            "-movflags", "+frag_keyframe+empty_moov+default_base_moof", str(temp),
+            "-movflags", "+faststart", *FFMPEG_CLEAN_META_AV, str(temp),
         ]
     elif has_source_audio:
         filter_complex = (
@@ -12662,7 +12725,7 @@ def add_audio_to_video(
             "-filter_complex", filter_complex,
             "-map", "0:v:0", "-map", "[a]", "-c:v", "copy", "-c:a", "aac",
             "-ar", "44100", "-b:a", "192k", "-ac", "2", "-t", duration, "-shortest",
-            "-movflags", "+frag_keyframe+empty_moov+default_base_moof", str(temp),
+            "-movflags", "+faststart", *FFMPEG_CLEAN_META_AV, str(temp),
         ]
     elif use_music:
         music_gain = round(random.uniform(*MUSIC_VOLUME_RANGE), 3)
@@ -12676,7 +12739,7 @@ def add_audio_to_video(
             "-i", str(music_path), "-filter_complex", filter_complex,
             "-map", "0:v:0", "-map", "[a]", "-c:v", "copy", "-c:a", "aac",
             "-ar", "44100", "-b:a", "192k", "-ac", "2", "-t", duration, "-shortest",
-            "-movflags", "+frag_keyframe+empty_moov+default_base_moof", str(temp),
+            "-movflags", "+faststart", *FFMPEG_CLEAN_META_AV, str(temp),
         ]
     else:
         filter_complex = voice_chain
@@ -12685,7 +12748,7 @@ def add_audio_to_video(
             "-filter_complex", filter_complex,
             "-map", "0:v:0", "-map", "[voice]", "-c:v", "copy", "-c:a", "aac",
             "-ar", "44100", "-b:a", "192k", "-ac", "2", "-t", duration, "-shortest",
-            "-movflags", "+frag_keyframe+empty_moov+default_base_moof", str(temp),
+            "-movflags", "+faststart", *FFMPEG_CLEAN_META_AV, str(temp),
         ]
 
     ffmpeg_log = output_path.with_suffix(".audio_mix_ffmpeg.log")
@@ -12749,10 +12812,10 @@ def ensure_final_full_hd(video_path: Path) -> bool:
     attempts = [
         ["ffmpeg", "-y", "-i", str(video_path), "-map", "0:v:0", "-map", "0:a?", "-vf", vf,
          "-c:v", "h264_nvenc", "-preset", ENCODER_PRESET, "-rc", "vbr", "-cq", "18", "-b:v", "10M",
-         "-maxrate", "14M", "-bufsize", "20M", "-c:a", "copy", "-movflags", "+faststart", str(temp_path)],
+         "-maxrate", "14M", "-bufsize", "20M", "-c:a", "copy", "-movflags", "+faststart", *FFMPEG_CLEAN_META_AV, str(temp_path)],
         ["ffmpeg", "-y", "-i", str(video_path), "-map", "0:v:0", "-map", "0:a?", "-vf", vf,
          "-c:v", "libx264", "-preset", "slow", "-crf", "17", "-pix_fmt", "yuv420p",
-         "-c:a", "copy", "-movflags", "+faststart", str(temp_path)],
+         "-c:a", "copy", "-movflags", "+faststart", *FFMPEG_CLEAN_META_AV, str(temp_path)],
     ]
     for args in attempts:
         try:
@@ -12847,14 +12910,14 @@ def add_subtitles_to_video(
                 ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(video_path),
                  "-map", "0:v:0", "-map", "0:a?", "-vf", vf,
                  "-c:v", HW_ENCODER, "-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", "8000k",
-                 "-c:a", "copy", "-movflags", "+faststart", str(temp_output)],
+                 "-c:a", "copy", "-movflags", "+faststart", *FFMPEG_CLEAN_META_AV, str(temp_output)],
             ),
             (
                 "CPU",
                 ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(video_path),
                  "-map", "0:v:0", "-map", "0:a?", "-vf", vf,
                  "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p",
-                 "-c:a", "copy", "-movflags", "+faststart", str(temp_output)],
+                 "-c:a", "copy", "-movflags", "+faststart", *FFMPEG_CLEAN_META_AV, str(temp_output)],
             ),
         ]
 
@@ -13365,48 +13428,46 @@ def create_silent_intro_fallback(
 
 
 def normalize_intro_clip_duration(path: Path, target_duration: float = FLOW_CLIP_SECONDS) -> bool:
-    """Normalize every intro shot to its exact narration window duration.
-
-    Longer clips are trimmed; shorter clips are extended by holding the final frame.
-    Existing ambience audio is retained where present and padded with silence if needed.
-    """
+    """Silently master an intro clip and lock it to its narration window."""
     if not is_valid_video(path):
         return False
     current = get_duration(path)
-    if current is None:
+    if current is None or current <= 0.0:
         return False
-    if abs(current - target_duration) <= 0.01:
-        return True
-
     temp = path.with_name(path.stem + ".time_aligned.tmp.mp4")
     temp.unlink(missing_ok=True)
-    pad_seconds = max(0.0, target_duration - current)
-    vf = f"fps={FPS},tpad=stop_mode=clone:stop_duration={pad_seconds:.3f}"
-    cmd = [
-        "ffmpeg", "-y", "-i", str(path),
-        "-map", "0:v:0", "-map", "0:a?",
-        "-vf", vf, "-af", "apad",
-        "-t", f"{target_duration:.3f}",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "128k", "-ar", "48000",
-        "-movflags", "+faststart", str(temp),
+    speed_pts = random.uniform(0.985, 1.015)
+    pad_seconds = max(0.0, target_duration - current * speed_pts + 0.25)
+    angle = math.radians(random.choice((-1, 1)) * random.uniform(0.30, 0.45))
+    crop = random.uniform(0.950, 0.962)
+    contrast, brightness, saturation = random.uniform(*COLOR_CONTRAST_JITTER), random.uniform(*COLOR_BRIGHTNESS_JITTER), random.uniform(*COLOR_SATURATION_JITTER)
+    grain = 1 if ACTIVE_VISUAL_STYLE_ID in {"comic_explainer", "cartoon_2d"} else random.randint(2, 3)
+    vf = f"setpts=PTS/{speed_pts:.6f},rotate={angle:.9f}:ow=iw:oh=ih:bilinear=1,crop=iw*{crop:.6f}:ih*{crop:.6f},scale=1920:1080:flags=lanczos,eq=contrast={contrast:.4f}:brightness={brightness:.4f}:saturation={saturation:.4f},noise=alls={grain}:allf=t+u,fps={FPS},tpad=stop_mode=clone:stop_duration={pad_seconds:.3f},setsar=1"
+    bitrate = f"{random.randint(*VIDEO_BITRATE_RANGE)}k"
+    attempts = [
+        [FFMPEG_BIN, "-y", "-i", str(path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target_duration:.3f}", "-r", str(FPS), "-c:v", HW_ENCODER, "-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", bitrate, "-maxrate", "12000k", "-pix_fmt", "yuv420p", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
+        [FFMPEG_BIN, "-y", "-i", str(path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target_duration:.3f}", "-r", str(FPS), "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
     ]
     try:
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=180)
-        actual = get_duration(temp)
-        if not is_valid_video(temp) or actual is None or abs(actual - target_duration) > 0.10:
-            raise RuntimeError(f"normalized duration is {actual!r}, expected {target_duration:.3f}s")
-        temp.replace(path)
-        log.info(
-            "[Intro Alignment] %s duration normalized %.3fs -> %.3fs (speech window locked).",
-            path.name, current, target_duration,
-        )
-        return True
+        last_error = None
+        for cmd in attempts:
+            temp.unlink(missing_ok=True)
+            try:
+                subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=300)
+                actual = get_duration(temp)
+                if is_valid_video(temp) and actual is not None and abs(actual - target_duration) <= 0.10 and not has_audio_stream(temp):
+                    temp.replace(path)
+                    log.info("[Intro Master] %s: %.3fs -> %.3fs; silent output", path.name, current, target_duration)
+                    return True
+            except Exception as exc:
+                last_error = exc
+        raise RuntimeError(str(last_error or "duration/video validation failed"))
     except Exception as exc:
-        log.error("[Intro Alignment] Не удалось нормализовать длительность %s: %s", path.name, exc)
+        log.error("[Intro Alignment] Не удалось обработать %s: %s", path.name, exc)
         return False
     finally:
         temp.unlink(missing_ok=True)
+
 
 
 async def build_intro(
@@ -13418,6 +13479,10 @@ async def build_intro(
     narration_segments: list[dict[str, Any]] | None = None,
 ) -> float:
     intro = state.data["intro"]
+    INTRO_MASTER_VERSION = "intro-silent-fhd-film-master-v1"
+    if intro.get("master_version") != INTRO_MASTER_VERSION:
+        intro["master_version"] = INTRO_MASTER_VERSION
+        intro["mastered_clips"] = []
     if not intro.get("enabled", True):
         intro["actual_duration"] = 0.0
         intro["clip_durations"] = []
@@ -13602,7 +13667,8 @@ async def build_intro(
 
         # Each clip is aligned to its own fixed Whisper time window, not merely kept at
         # whatever duration Flow happens to return.
-        if is_valid_video(raw_path):
+        mastered_clips = set(intro.get("mastered_clips", []))
+        if is_valid_video(raw_path) and (clip_path.name not in mastered_clips or not is_valid_video(clip_path)):
             shutil.copy2(raw_path, clip_path)
             log.info(
                 "⏭️ [Intro] Полный raw clip %s: %.2fs",
@@ -13735,10 +13801,14 @@ async def build_intro(
         # Keep the original Flow audio stream so natural environmental ambience can
         # survive. The prompt forbids dialogue/music; final mix keeps this track quiet.
 
-        if not normalize_intro_clip_duration(clip_path, FLOW_CLIP_SECONDS):
-            raise FlowTechnicalError(
-                f"Intro {idx}: не удалось выровнять клип по окну озвучки {shot_start:.3f}-{shot_end:.3f}s"
-            )
+        if clip_path.name not in mastered_clips or not is_valid_video(clip_path):
+            if not normalize_intro_clip_duration(clip_path, FLOW_CLIP_SECONDS):
+                raise FlowTechnicalError(
+                    f"Intro {idx}: не удалось выровнять клип по окну озвучки {shot_start:.3f}-{shot_end:.3f}s"
+                )
+            mastered_clips.add(clip_path.name)
+            intro["mastered_clips"] = sorted(mastered_clips)
+            state.save()
         duration = get_duration(clip_path)
         if duration is None or duration <= 0.05 or abs(duration - FLOW_CLIP_SECONDS) > 0.10:
             raise FlowTechnicalError(
@@ -13789,7 +13859,7 @@ async def build_intro(
             parts,
             temp,
             state.work_dir,
-            preserve_audio=True,
+            preserve_audio=False,
         )
     except Exception as exc:
         concat_error = exc
@@ -14898,7 +14968,8 @@ async def process_project(
                     )
 
             if existing_audio:
-                shutil.copy2(existing_audio, audio_path)
+                if not master_voice_audio(existing_audio, audio_path):
+                    raise RuntimeError(f"Не удалось выполнить мастеринг существующей озвучки до Whisper: {existing_audio}")
                 log.info(
                     "🎧 [Audio] Используем готовую озвучку из папки проекта: %s (lang=%s; размер=%.1f MB)",
                     existing_audio.name, project_lang, existing_audio.stat().st_size / (1024 * 1024),
@@ -15900,7 +15971,7 @@ async def process_project(
                 all_parts,
                 no_audio,
                 state.work_dir,
-                preserve_audio=True,
+                preserve_audio=False,
                 crossfade_duration=SLIDE_CROSSFADE_SECONDS,
                 transition_start_index=transition_start_index,
             ):
@@ -16086,6 +16157,24 @@ async def process_project(
                     "Final video is valid but could not be confirmed/re-encoded to 1920x1080 Full HD. "
                     "The original file was preserved; check FFmpeg logs/encoder availability before marking the project complete."
                 )
+            container_issues = audit_mp4_container(final_path)
+            if container_issues:
+                log.warning("[MP4 Audit] Найдены UUID-боксы/служебные теги: %s; выполняю один remux.", ", ".join(container_issues))
+                remux_temp = final_path.with_name(final_path.stem + ".clean_remux.tmp.mp4")
+                remux_cmd = [FFMPEG_BIN, "-y", "-i", str(final_path), "-map", "0:v:0", "-map", "0:a?", "-c", "copy", *FFMPEG_CLEAN_META_AV, "-movflags", "+faststart", str(remux_temp)]
+                try:
+                    subprocess.run(remux_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=1800)
+                    if not is_valid_video(remux_temp):
+                        raise RuntimeError("remux output failed validation")
+                    remux_temp.replace(final_path)
+                    remaining = audit_mp4_container(final_path)
+                    if remaining:
+                        log.warning("[MP4 Audit] После remux остались замечания: %s", ", ".join(remaining))
+                    else:
+                        log.info("[MP4 Audit] Контейнер очищен после remux.")
+                except Exception as audit_exc:
+                    remux_temp.unlink(missing_ok=True)
+                    log.warning("[MP4 Audit] Remux не выполнен: %s", audit_exc)
 
         state.data["final"]["video"] = str(final_path)
         state.data["final"]["subtitles"] = str(subtitle_path)
@@ -16117,7 +16206,11 @@ async def process_project(
 
         # 11. Preview delivery: copy source preview into final output, and generate only two new thumbnails.
         state.set_stage("thumbnails")
-        original_preview_delivery = copy_original_preview(folder, final_render_dir)
+        remembered_original = Path(str(state.data.get("source_preview_delivery", "") or ""))
+        if state.data.get("source_preview_finished") is True and is_valid_image(remembered_original):
+            original_preview_delivery = remembered_original
+        else:
+            original_preview_delivery = copy_original_preview(folder, final_render_dir)
         if original_preview_delivery is not None:
             state.data["source_preview_delivery"] = str(original_preview_delivery)
         elif state.data.get("source_preview_delivery"):
@@ -16357,10 +16450,20 @@ async def process_project(
             if preview_key in seen_preview_paths:
                 continue
             seen_preview_paths.add(preview_key)
-            if not normalize_preview_image_1280x720(preview_path):
+            thumb_record = next((item for item in state.data.get("thumbnails", []) if isinstance(item, dict) and str(item.get("path", "")) and Path(str(item.get("path", ""))).resolve() == preview_path.resolve()), None)
+            is_original_preview = bool(original_preview_value and preview_path.resolve() == Path(original_preview_value).resolve())
+            already_finished = ((is_original_preview and state.data.get("source_preview_finished") is True) or (thumb_record is not None and thumb_record.get("finished") is True))
+            if already_finished and preview_image_has_delivery_size(preview_path):
+                continue
+            if not normalize_preview_image_1280x720(preview_path, apply_finishing=not is_original_preview):
                 raise FlowTechnicalError(
                     f"Не удалось подготовить превью 1280x720: {preview_path.name}. Исходная папка сохранена для возобновления."
                 )
+            if is_original_preview:
+                state.data["source_preview_finished"] = True
+            elif thumb_record is not None:
+                thumb_record["finished"] = True
+            state.save()
 
         # Delivery invariant: exactly two generated thumbnails, plus the copied original preview if one existed.
         expected_thumbnail_paths = [Path(str(item.get("path", ""))) for item in state.data.get("thumbnails", [])]
