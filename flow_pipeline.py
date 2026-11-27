@@ -10943,6 +10943,11 @@ class ProjectState:
             for key, value in base.items():
                 if key not in data:
                     data[key] = value
+            # Additive migration: preserve every existing checkpoint while advancing the schema.
+            previous_schema = int(data.get("schema", 1) or 1)
+            if previous_schema < 2:
+                data["schema"] = 2
+                log.info("[State] Миграция схемы %s -> 2 без сброса существующих checkpoint.", previous_schema)
             return data
         except Exception as e:
             broken = self.path.with_name(f"state_broken_{int(time.time())}.json")
