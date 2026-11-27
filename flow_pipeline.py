@@ -12391,7 +12391,7 @@ def inspect_mp4_provenance(path: Path) -> dict[str, Any]:
     try:
         probe = subprocess.run(
             ["ffprobe", "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", timeout=30,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", encoding="utf-8", errors="replace", timeout=30,
         )
         if probe.returncode == 0 and probe.stdout.strip():
             parsed = json.loads(probe.stdout)
@@ -15859,6 +15859,44 @@ async def process_project(
 
         for idx, record in enumerate(state.data["main_clips"]):
             output_path = Path(record["output_path"])
+            if record.get("media_type") == "video":
+                if is_valid_video(output_path) and record.get("done"):
+                    continue
+                raw_video = state.media_dir / f"scene_{idx + 1:04d}_raw.mp4"
+                scene_plan_video = str(record.get("plan") or (state.data.get("scene_plan", [""])[idx] if idx < len(state.data.get("scene_plan", [])) else ""))
+                video_prompt = (
+                    "Cinematic documentary video insert. No talking head, no lip motion, no dialogue. "
+                    "Show physical movement, travel, nature/weather, crowds, or a location/era change. "
+                    "Match the established visual style and exact narration beat; no text, logo or watermark.\n\n"
+                    + str(record.get("text", "")) + "\n\n" + scene_plan_video
+                )
+                video_prompt = enforce_selected_visual_style(
+                    enforce_flow_intro_silent_visual_policy(
+                        enforce_flow_ambience_only_audio(
+                            apply_visible_text_language_rule(
+                                apply_youtube_content_safety_rules(video_prompt, "video"), project_lang
+                            )
+                        )
+                    ), "video"
+                )
+                try:
+                    await generate_flow_with_failover(manager, playwright, "video", video_prompt, raw_video)
+                    target_duration = float(record["end"]) - float(record["start"])
+                    if not master_main_video_insert(raw_video, output_path, target_duration):
+                        raise FlowTechnicalError("Veo insert mastering failed")
+                    record["done"] = True
+                    record["video_insert_raw_path"] = str(raw_video)
+                    record["video_insert_mastered"] = True
+                    state.save()
+                    continue
+                except Exception as video_exc:
+                    log.warning("[Veo Inserts] Scene %s failed; falling back to still image: %s", idx + 1, video_exc)
+                    record["media_type"] = "image"
+                    record["done"] = False
+                    record["video_insert_fallback"] = str(video_exc)[:700]
+                    raw_video.unlink(missing_ok=True)
+                    output_path.unlink(missing_ok=True)
+                    state.save()
             image_path = Path(record["image_path"])
             scene_plan_for_effect = (
                 state.data.get("scene_plan", [])[idx]
