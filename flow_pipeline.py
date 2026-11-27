@@ -14921,6 +14921,7 @@ async def process_project(
     selected_visual_style: str = "realistic",
 ) -> bool:
     manager.last_project_stop_reason = None
+    log.info("[TTS Voice] Project=%s | channel=%s | voice=%s", folder.name, channel_name, get_channel_tts_voice(channel_name))
     manual_reopen_requested = project_manual_reopen_requested(folder)
     if is_completed_project_folder(folder):
         log.info("⏭️ [Project Done] %s уже завершён (_DONE или sidecar marker); пропускаю повторную обработку.", folder.name)
