@@ -14326,8 +14326,14 @@ def final_delivery_outputs_ready(folder: Path, final_path: Path) -> bool:
         if not state_path.is_file() or not is_valid_video(final_path):
             return False
         # Read-only provenance report; the delivered MP4 is never rewritten.
-        inspect_mp4_provenance(final_path)
         data = json.loads(state_path.read_text(encoding="utf-8", errors="replace"))
+        provenance_report = inspect_mp4_provenance(final_path)
+        if isinstance(data, dict):
+            data["provenance_inspection"] = provenance_report
+            try:
+                atomic_write_json(state_path, data)
+            except Exception as state_exc:
+                log.warning("[Provenance] Не удалось сохранить отчёт в state.json: %s", state_exc)
         final = data.get("final", {}) if isinstance(data, dict) else {}
         thumbs = data.get("thumbnails", []) if isinstance(data, dict) else []
         if not final.get("done") or not final.get("subtitles_burned"):
