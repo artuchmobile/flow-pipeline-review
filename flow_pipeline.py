@@ -4497,6 +4497,51 @@ def append_relevant_character_locks(
 
 
 
+# Stage 3 planning constants
+INTRO_MIN_CLIPS = 8
+INTRO_MAX_CLIPS = 11
+INTRO_SHORT_VIDEO_THRESHOLD_SEC = 420.0
+INTRO_SHORT_VIDEO_MAX_SHARE = 0.38
+INTRO_SHORT_MIN_CLIPS = 5
+ENABLE_MAIN_VIDEO_INSERTS = True
+MAIN_VIDEO_INSERT_MIN_DUR = 7.2
+MAIN_VIDEO_INSERT_MAX_DUR = 9.2
+MAIN_VIDEO_INSERT_TARGET_DUR = 8.0
+
+def plan_floating_intro(segments, audio_duration):
+    duration = max(0.0, float(audio_duration or 0.0))
+    upper = max(1, min(8, int((duration * 0.38) // 8.0))) if duration < 420.0 else 11
+    lower = min(5, upper) if duration < 420.0 else 8
+    count = max(lower, min(upper, round(duration / 64.0 * 8.0)))
+    words = []
+    for segment in segments or []:
+        if not isinstance(segment, dict):
+            continue
+        for word in (segment.get("words") or [segment]):
+            try:
+                start = float(word.get("start", segment.get("start", 0.0)))
+                end = float(word.get("end", segment.get("end", 0.0)))
+                token = str(word.get("word", word.get("text", "")))
+                if end > start:
+                    words.append((start, end, token))
+            except Exception:
+                pass
+    words.sort()
+    boundaries = []
+    for index, (_, end, token) in enumerate(words):
+        next_start = words[index + 1][0] if index + 1 < len(words) else duration
+        pause = max(0.0, next_start - end)
+        if re.search(r"[.!?…][\"'”’»)]*$", token) or pause >= 0.35:
+            boundaries.append(end + min(pause * 0.5, 0.5))
+    nominal = count * 8.0
+    feasible = [x for x in boundaries if 6.8 * count <= x <= min(duration, 8.0 * (count - 1) + 9.0)]
+    intro_end = round(min(feasible or [min(duration, nominal)], key=lambda x: abs(x - nominal)), 3)
+    if intro_end < 6.8 * count:
+        count = max(1, min(count, int(intro_end // 6.8)))
+    durations = [8.0] * max(0, count - 1)
+    durations.append(round(intro_end - sum(durations), 3))
+    return {"clip_count": len(durations), "clip_durations": durations, "intro_end_time": round(sum(durations), 3)}
+
 def build_intro_narration_windows(
     narration_segments: list[dict[str, Any]] | None,
     shot_count: int = INTRO_SHOT_COUNT,
