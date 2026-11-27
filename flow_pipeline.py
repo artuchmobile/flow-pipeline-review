@@ -11287,9 +11287,6 @@ def plan_semantic_scene_intervals(
             log.warning("[Semantic Planning] Блок %s: LLM JSON/coverage invalid (%s); использую локальные паузы.", block_index + 1, exc)
 
         if parsed is None:
-            fallback = calculate_pause_aligned_intervals(
-                [{"words": [w for sentence in units for w in []]}], block_duration, float(units[0]["start"]), min_dur, target_dur, max_dur
-            )
             # Group the already extracted sentence records locally (no second ASR pass).
             local_groups: list[dict] = []
             pos = 0
@@ -12645,7 +12642,7 @@ def _render_crossfade_group(
     for encoder, encoder_args in encoders:
         temp_output.unlink(missing_ok=True)
         cmd = base_cmd + ["-c:v", encoder, *encoder_args, "-pix_fmt", "yuv420p", "-r", str(FPS),
-                          "-t", f"{total_duration:.3f}", *FFMPEG_CLEAN_META_AV if preserve_audio else *FFMPEG_CLEAN_META_VIDEO, str(temp_output)]
+                          "-t", f"{total_duration:.3f}", *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO), str(temp_output)]
         try:
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=max(900, int(total_duration * 5)))
             actual = get_duration(temp_output)
@@ -16168,7 +16165,9 @@ async def process_project(
                 )
             )
 
-        transition_specs = [{"type": "cut", "duration": 0.0}]
+        transition_specs = []
+        if state.data["intro"]["done"]:
+            transition_specs.append({"type": "cut", "duration": 0.0})
         for record in state.data["main_clips"]:
             all_parts.append((Path(record["output_path"]), float(record["duration"])))
             transition_specs.append({
