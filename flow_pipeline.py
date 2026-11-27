@@ -11343,18 +11343,36 @@ def plan_semantic_scene_intervals(
             log.warning("[Semantic Planning] Блок %s: LLM JSON/coverage invalid (%s); использую локальные паузы.", block_index + 1, exc)
 
         if parsed is None:
-            # Group the already extracted sentence records locally (no second ASR pass).
+            # Reuse the local pause aligner for this block only; do not make another ASR call.
+            block_start = float(units[0]["start"])
+            block_end = float(units[-1]["end"])
+            if isinstance(segments, dict):
+                source_words = segments.get("words", []) or []
+            else:
+                source_words = []
+                for source_segment in segments or []:
+                    if isinstance(source_segment, dict):
+                        source_words.extend(source_segment.get("words") or [])
+            block_words = []
+            for word in source_words:
+                try:
+                    if float(word.get("end", 0.0)) > block_start and float(word.get("start", 0.0)) < block_end:
+                        block_words.append(word)
+                except (TypeError, ValueError, AttributeError):
+                    continue
+            fallback_intervals = calculate_pause_aligned_intervals(
+                {"words": block_words}, block_end, block_start, min_dur, target_dur, max_dur
+            )
             local_groups: list[dict] = []
-            pos = 0
-            while pos < len(units):
-                end_pos = pos + 1
-                while end_pos < len(units) and float(units[end_pos - 1]["end"]) - float(units[pos]["start"]) < target_dur:
-                    if float(units[end_pos]["end"]) - float(units[pos]["start"]) > max_dur:
-                        break
-                    end_pos += 1
-                local_groups.append({"from": units[pos]["id"], "to": units[end_pos - 1]["id"], "scene_break": False})
-                pos = end_pos
-            parsed = local_groups
+            for interval in fallback_intervals:
+                matched = [unit for unit in units
+                           if float(unit["end"]) > float(interval["start"])
+                           and float(unit["start"]) < float(interval["end"])]
+                if matched:
+                    local_groups.append({
+                        "from": matched[0]["id"], "to": matched[-1]["id"], "scene_break": False
+                    })
+            parsed = local_groups or [{"from": units[0]["id"], "to": units[-1]["id"], "scene_break": False}]
 
         # Repair overlong scenes by splitting at the nearest sentence boundary.
         repaired = []
