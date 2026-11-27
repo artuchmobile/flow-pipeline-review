@@ -11347,7 +11347,27 @@ def calculate_pause_aligned_intervals(
                        "_sentence_from": group[0]["id"], "_sentence_to": group[-1]["id"]})
     if result:
         result[-1]["end"] = float(audio_duration)
-    return [x for x in result if x["end"] > x["start"]]
+    # Final hard cap: split any residual >22s interval at the nearest Whisper word boundary.
+    capped = []
+    for interval in result:
+        pending = dict(interval)
+        while float(pending["end"]) - float(pending["start"]) > 22.0:
+            left = float(pending["start"]); right = float(pending["end"])
+            target = (left + right) / 2.0
+            cut = _nearest_whisper_cut(segments, target, left + 5.5, right - 5.5)
+            if cut <= left + 0.05 or cut >= right - 0.05:
+                cut = target
+            second = dict(pending)
+            pending["end"] = round(cut, 3)
+            pending["duration"] = round(cut - left, 3)
+            second["start"] = round(cut, 3)
+            second["scene_break"] = False
+            second["pause_before"] = 0.0
+            pending["_split_continuation"] = True
+            capped.append(pending)
+            pending = second
+        capped.append(pending)
+    return [x for x in capped if x["end"] > x["start"]]
 
 
 def fit_semantic_scene_count(
