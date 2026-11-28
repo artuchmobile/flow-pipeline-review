@@ -13472,7 +13472,11 @@ def apply_micro_sfx_to_video(
         "alimiter=limit=0.95:level=false[a]"
     )
     temp = output_path.with_name(output_path.stem + ".tmp.mp4")
-    temp.unlink(missing_ok=True)
+    try:
+        temp.unlink(missing_ok=True)
+    except OSError as cleanup_exc:
+        log.warning("[SFX] Could not clear stale render temp; skipping accents: %s", cleanup_exc)
+        return False
     cmd = [
         FFMPEG_BIN, "-y", "-i", str(input_path),
         "-f", "lavfi", "-i",
@@ -13504,7 +13508,10 @@ def apply_micro_sfx_to_video(
         )
         return True
     except Exception as exc:
-        temp.unlink(missing_ok=True)
+        try:
+            temp.unlink(missing_ok=True)
+        except OSError:
+            pass
         log.warning("[SFX] Micro-accent mix skipped safely: %s", exc)
         return False
 
