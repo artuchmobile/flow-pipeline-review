@@ -34,6 +34,7 @@ from playwright.async_api import async_playwright, TimeoutError as PlaywrightTim
 from adguard_rotator import rotate_adguard_windows_vpn
 PIPELINE_VERSION = "2026-11-27-UNIFIED-MASTERING-CLEAN-EXPORT-V75"
 FFMPEG_BIN = shutil.which("ffmpeg") or "ffmpeg"
+FFPROBE_BIN = shutil.which("ffprobe") or "ffprobe"
 
 # ============================================================================
 # CONFIG
@@ -291,7 +292,7 @@ PROXY_CONNECT_COOLDOWN_SECONDS = 60
 FLOW_CLIP_SECONDS = 8.0
 INTRO_SHOT_COUNT = 8
 INTRO_TARGET_SECONDS = FLOW_CLIP_SECONDS * INTRO_SHOT_COUNT  # about 64 seconds at 8s per Flow clip
-INTRO_STORYBOARD_VERSION = "eight-shot-64s-v9-whisper-timecoded-semantic-alignment"
+INTRO_STORYBOARD_VERSION = "floating-intro-8-11-v1-whisper-silence-aligned"
 ENABLE_FLOW_INTRO_DEFAULT = True
 
 # ------------------------------------------------------------
@@ -299,6 +300,7 @@ ENABLE_FLOW_INTRO_DEFAULT = True
 # ------------------------------------------------------------
 
 FPS = 30
+MAX_ALIGNMENT_PAD_SECONDS = 1.5  # Never hide missing montage content with a long cloned tail.
 HW_ENCODER = "h264_nvenc"
 ENCODER_PRESET = "p5"
 
@@ -381,6 +383,15 @@ _PARALLAX_FALLBACK_LOGGED = False
 FLOW_INTRO_AUDIO_GAIN = 0.15
 FLOW_INTRO_AUDIO_PEAK_LIMIT = 0.15  # cap the ambience peak at 15% full scale
 ENABLE_BACKGROUND_MUSIC = False
+
+# Stage 4 documentary chapter cards and restrained transition micro-SFX.
+# Micro-SFX are deliberately quiet and only mixed when background music is OFF.
+STAGE4_VERSION = "2026-11-28-stage4-chapters-micro-sfx-v1"
+ENABLE_CHAPTER_TITLE_CARDS = True
+ENABLE_MICRO_SFX = True
+MICRO_SFX_GAIN = 0.035       # linear gain (~-29 dB), intentionally far below narration
+MICRO_SFX_FREQUENCY = 58     # low, soft thump; avoids sharp/high-frequency transients
+MICRO_SFX_DURATION = 0.34    # seconds per accent
 FLOW_VIDEO_AUDIO_POLICY_MARKER = "FLOW VIDEO AUDIO POLICY —"
 FLOW_VIDEO_AUDIO_POLICY = """FLOW VIDEO AUDIO POLICY — Prefer silence or only soft, natural location ambience (quiet wind, leaves, or room tone). No music, speech, singing, whistling, or sharp sound effects."""
 # One bounded recovery path for Flow's audio backend failures. After Gemini rewrites
@@ -4497,10 +4508,231 @@ def append_relevant_character_locks(
 
 
 
+# Stage 3 planning constants
+INTRO_MIN_CLIPS = 8
+INTRO_MAX_CLIPS = 11
+INTRO_SHORT_VIDEO_THRESHOLD_SEC = 420.0
+INTRO_SHORT_VIDEO_MAX_SHARE = 0.38
+INTRO_SHORT_MIN_CLIPS = 5
+ENABLE_MAIN_VIDEO_INSERTS = True
+MAIN_VIDEO_INSERT_MIN_DUR = 7.2
+MAIN_VIDEO_INSERT_MAX_DUR = 9.2
+MAIN_VIDEO_INSERT_TARGET_DUR = 8.0
+
+def plan_floating_intro(segments, audio_duration):
+    """Choose N and the exact opening endpoint from Whisper sentence/pause boundaries."""
+    duration=max(0.0,float(audio_duration or 0.0))
+    if duration<INTRO_SHORT_VIDEO_THRESHOLD_SEC:
+        upper=max(INTRO_SHORT_MIN_CLIPS,min(INTRO_MIN_CLIPS,int((duration*INTRO_SHORT_VIDEO_MAX_SHARE)//8.0)))
+        lower=INTRO_SHORT_MIN_CLIPS
+    else:
+        lower,upper=INTRO_MIN_CLIPS,INTRO_MAX_CLIPS
+    # Five clips need at least four 8s windows plus a 6.8s final window.
+    physically_possible=max(1,int(max(0.0,duration-6.8)//8.0)+1)
+    upper=min(upper,physically_possible)
+    lower=min(lower,upper)
+    words=[]
+    for segment in segments or []:
+        if not isinstance(segment,dict): continue
+        for word in (segment.get("words") or [segment]):
+            try:
+                start=float(word.get("start",segment.get("start",0.0)))
+                end=float(word.get("end",segment.get("end",0.0)))
+                token=str(word.get("word",word.get("text","")))
+                if end>start: words.append((start,end,token))
+            except Exception: pass
+    words.sort()
+    boundaries=[]
+    for index,(_,end,token) in enumerate(words):
+        next_start=words[index+1][0] if index+1<len(words) else duration
+        pause=max(0.0,next_start-end)
+        if re.search(r"[.!?…][\"'”’»)]*$",token) or pause>=0.35:
+            boundaries.append(min(duration,end+pause*0.5))
+    options=[]
+    for count in range(lower,upper+1):
+        low=8.0*(count-1)+6.8
+        high=min(duration,8.0*(count-1)+9.0)
+        valid=[x for x in boundaries if low<=x<=high]
+        if valid:
+            best=min(valid,key=lambda x:abs(x-count*8.0))
+            options.append((abs(best-count*8.0),count,best))
+    if options:
+        _,count,intro_end=min(options,key=lambda x:(x[0],x[1]))
+    else:
+        count=max(1,min(upper,round(duration/64.0*8.0)))
+        intro_end=min(duration,8.0*count)
+        if intro_end<8.0*(count-1)+6.8 and count>1:
+            count=max(1,min(count,int((duration-6.8)//8.0)+1))
+            intro_end=min(duration,8.0*count)
+    intro_end=round(max(0.0,intro_end),3)
+    durations=[8.0]*max(0,count-1)
+    durations.append(round(intro_end-sum(durations),3))
+    if durations[-1]<6.8 and count>1:
+        shift=round(6.8-durations[-1],3)
+        durations[-2]=round(durations[-2]-shift,3)
+        durations[-1]=6.8
+    durations[-1]=round(intro_end-sum(durations[:-1]),3)
+    return {"clip_count":len(durations),"clip_durations":durations,"intro_end_time":round(sum(durations),3)}
+
+
+def _nearest_whisper_cut(segments, target, lo, hi):
+    words=[]
+    for segment in segments or []:
+        if not isinstance(segment,dict): continue
+        for word in (segment.get("words") or [segment]):
+            try:
+                words.append((float(word.get("start",segment.get("start",0.0))),float(word.get("end",segment.get("end",0.0)))))
+            except Exception: pass
+    words.sort()
+    candidates=[]
+    for index,(_,end) in enumerate(words):
+        next_start=words[index+1][0] if index+1<len(words) else end
+        gap=max(0.0,next_start-end)
+        point=end+gap*0.5 if gap>0.0 else end
+        if lo<=point<=hi: candidates.append(point)
+    return min(candidates,key=lambda x:abs(x-target)) if candidates else min(hi,max(lo,target))
+
+
+
+def assign_main_video_insert_slots(main_clips, segments, intro_end_time, audio_duration):
+    if not ENABLE_MAIN_VIDEO_INSERTS or not main_clips or any(x.get("video_insert_assigned") for x in main_clips):
+        return main_clips
+    remaining=max(0.0,float(audio_duration)-float(intro_end_time))
+    zones=([(0.12,0.30),(0.70,0.90)] if remaining<360 else
+           ([(0.08,0.22),(0.28,0.43),(0.58,0.73),(0.80,0.94)] if remaining<=900 else
+            [(0.05,0.18),(0.22,0.36),(0.43,0.58),(0.64,0.78),(0.82,0.96)]))
+    candidates=[(i,c) for i,c in enumerate(main_clips) if float(c["end"])-float(c["start"])>=MAIN_VIDEO_INSERT_MIN_DUR]
+    selected=[]
+    for lo,hi in zones:
+        target=float(intro_end_time)+remaining*(lo+hi)/2
+        eligible=[(i,c) for i,c in candidates if i not in selected and all(abs(i-j)>=3 for j in selected)]
+        if eligible: selected.append(min(eligible,key=lambda x:abs((float(x[1]["start"])+float(x[1]["end"]))/2-target))[0])
+    try:
+        zone_text="\n".join(f"ZONE {zone_index+1}: target={float(intro_end_time)+remaining*(lo+hi)/2:.1f}s range={float(intro_end_time)+remaining*lo:.1f}-{float(intro_end_time)+remaining*hi:.1f}s" for zone_index,(lo,hi) in enumerate(zones))
+        prompt="Choose one scene index per narrative zone below. Prioritize physical movement, travel, nature/weather, crowds and location/era changes; avoid static dialogue and face closeups. Keep at least two image scenes between selected indexes. Return only a JSON integer array in zone order.\n"+zone_text+"\nCANDIDATES:\n"+"\n".join(f'{i}: {c["start"]:.2f}-{c["end"]:.2f} {str(c.get("text",""))[:180]}' for i,c in candidates[:80])
+        match=re.search(r"\[[\s\S]*?\]",str(call_text_api(prompt) or ""))
+        proposed=json.loads(match.group(0)) if match else []
+        valid=[]
+        for value in proposed:
+            if isinstance(value,int) and any(value==i for i,_ in candidates) and value not in valid and all(abs(value-j)>=3 for j in valid):
+                valid.append(value)
+        if valid:
+            selected=valid[:len(zones)]
+            if len(selected)<len(zones):
+                for fallback_index,_ in candidates:
+                    if fallback_index not in selected and all(abs(fallback_index-j)>=3 for j in selected):
+                        selected.append(fallback_index)
+                        if len(selected)>=len(zones): break
+    except Exception as exc: log.warning("[Veo Inserts] LLM selection failed; using zone fallback: %s",exc)
+    remainder_by_index={}
+    merged_next_indices=set()
+    for i in selected:
+        clip=main_clips[i]; start=float(clip["start"]); end=float(clip["end"])
+        if end-start>MAIN_VIDEO_INSERT_MAX_DUR:
+            cut=_nearest_whisper_cut(segments,start+MAIN_VIDEO_INSERT_TARGET_DUR,start+MAIN_VIDEO_INSERT_MIN_DUR,min(end,start+MAIN_VIDEO_INSERT_MAX_DUR))
+            if cut-start<MAIN_VIDEO_INSERT_MIN_DUR or cut-start>MAIN_VIDEO_INSERT_MAX_DUR: continue
+            remainder_end=end
+            next_record=main_clips[i+1] if i+1<len(main_clips) else None
+            if remainder_end-cut<5.5:
+                if next_record is None or i+1 in selected or float(next_record["end"])-cut>22.0: continue
+                remainder_end=float(next_record["end"])
+                merged_next_indices.add(i+1)
+            remainder=dict(clip)
+            remainder["start"]=round(cut,3); remainder["end"]=round(remainder_end,3); remainder["duration"]=round(remainder_end-cut,3)
+            remainder["media_type"]="image"; remainder["done"]=False; remainder["video_insert_assigned"]=True
+            remainder["scene_break"]=False
+            remainder["text"]=get_text_for_timeslot(segments,cut,remainder_end)
+            remainder["plan"] = str(next_record.get("plan", "")) if (i + 1 in merged_next_indices and next_record) else ""
+            remainder["image_path"]=str(Path(clip["image_path"]).with_name(f"scene_insert_remainder_{i+1:04d}.jpg"))
+            remainder["output_path"]=str(Path(clip["output_path"]).with_name(f"scene_insert_remainder_{i+1:04d}.mp4"))
+            if i+1 in merged_next_indices:
+                remainder["transition_out"]=next_record.get("transition_out","cut")
+                remainder["transition_dur"]=float(next_record.get("transition_dur",0.0) or 0.0)
+            else:
+                remainder["transition_out"]=clip.get("transition_out","cut")
+                remainder["transition_dur"]=float(clip.get("transition_dur",0.0) or 0.0)
+            remainder["remainder_of_scene"]=i+1
+            remainder_by_index[i]=remainder
+            clip["end"]=round(cut,3); clip["duration"]=round(cut-start,3)
+            clip["text"]=get_text_for_timeslot(segments,start,cut)
+            clip["transition_out"]="cut"; clip["transition_dur"]=0.0
+        if MAIN_VIDEO_INSERT_MIN_DUR<=float(clip["end"])-float(clip["start"])<=MAIN_VIDEO_INSERT_MAX_DUR:
+            clip["media_type"]="video"
+    expanded=[]
+    for i,clip in enumerate(main_clips):
+        if i in merged_next_indices: continue
+        expanded.append(clip)
+        if i in remainder_by_index: expanded.append(remainder_by_index[i])
+    cursor=float(intro_end_time)
+    for index,clip in enumerate(expanded):
+        duration=max(0.05,float(clip["end"])-float(clip["start"]))
+        clip["start"]=round(cursor,3); clip["end"]=round(cursor+duration,3); clip["duration"]=round(duration,3)
+        clip["index"]=index; clip["media_type"]="video" if clip.get("media_type")=="video" else "image"
+        clip["video_insert_assigned"]=True; cursor=clip["end"]
+    if expanded:
+        delta=round(float(audio_duration)-float(expanded[-1]["end"]),3)
+        expanded[-1]["end"]=round(float(audio_duration),3)
+        expanded[-1]["duration"]=round(expanded[-1]["duration"]+delta,3)
+    return expanded
+
+
+def master_main_video_insert(raw_path, output_path, target_duration):
+    if not is_valid_video(raw_path):
+        return False
+    current = get_duration(raw_path)
+    if current is None or current <= 0.0:
+        return False
+    temp = output_path.with_name(output_path.stem + ".master_tmp.mp4")
+    temp.unlink(missing_ok=True)
+    target = float(target_duration)
+    pts_factor = max(0.85, min(1.22, target / current))
+    pad_seconds = max(0.0, target - current * pts_factor + 0.25)
+    if pad_seconds > MAX_ALIGNMENT_PAD_SECONDS:
+        log.warning(
+            "[Veo Inserts] Refusing frozen-tail padding for %s: required=%.3fs limit=%.3fs; "
+            "the scene will fall back to its still-image path.",
+            output_path.name, pad_seconds, MAX_ALIGNMENT_PAD_SECONDS,
+        )
+        return False
+    angle = math.radians(random.choice((-1, 1)) * random.uniform(0.30, 0.45))
+    crop = random.uniform(0.950, 0.962)
+    contrast = random.uniform(*COLOR_CONTRAST_JITTER)
+    brightness = random.uniform(*COLOR_BRIGHTNESS_JITTER)
+    saturation = random.uniform(*COLOR_SATURATION_JITTER)
+    grain = 1 if ACTIVE_VISUAL_STYLE_ID in {"comic_explainer", "cartoon_2d"} else random.randint(2, 3)
+    vf = (
+        f"setpts=(PTS-STARTPTS)*{pts_factor:.6f},"
+        f"rotate={angle:.9f}:ow=iw:oh=ih:bilinear=1,"
+        f"crop=iw*{crop:.6f}:ih*{crop:.6f},"
+        f"scale=1920:1080:flags=lanczos,"
+        f"eq=contrast={contrast:.4f}:brightness={brightness:.4f}:saturation={saturation:.4f},"
+        f"noise=alls={grain}:allf=t+u,"
+        f"fps={FPS},tpad=stop_mode=clone:stop_duration={pad_seconds:.3f},setsar=1"
+    )
+    bitrate = f"{random.randint(*VIDEO_BITRATE_RANGE)}k"
+    attempts = [
+        [FFMPEG_BIN, "-y", "-i", str(raw_path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target:.3f}", "-r", str(FPS), "-c:v", HW_ENCODER, "-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", bitrate, "-maxrate", "12000k", "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
+        [FFMPEG_BIN, "-y", "-i", str(raw_path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target:.3f}", "-r", str(FPS), "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
+    ]
+    for cmd in attempts:
+        try:
+            temp.unlink(missing_ok=True)
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=600)
+            actual = get_duration(temp)
+            if is_valid_video(temp) and not has_audio_stream(temp) and actual is not None and abs(actual - target) <= 0.12:
+                temp.replace(output_path)
+                log.info("[Veo Inserts] Mastered %s: %.3fs -> %.3fs (pts=%.4f); silent output", output_path.name, current, actual, pts_factor)
+                return True
+        except Exception as exc:
+            log.warning("[Veo Inserts] Mastering failed: %s", exc)
+    temp.unlink(missing_ok=True)
+    return False
+
 def build_intro_narration_windows(
     narration_segments: list[dict[str, Any]] | None,
     shot_count: int = INTRO_SHOT_COUNT,
     window_seconds: float = FLOW_CLIP_SECONDS,
+    clip_durations: list[float] | None = None,
 ) -> list[dict[str, Any]]:
     """Map Whisper's actual word timestamps onto fixed intro-shot time windows.
 
@@ -4509,9 +4741,14 @@ def build_intro_narration_windows(
     that are spoken while that clip is on screen.
     """
     windows: list[dict[str, Any]] = []
-    for index in range(shot_count):
-        start = index * float(window_seconds)
-        end = (index + 1) * float(window_seconds)
+    durations = [float(x) for x in clip_durations[:shot_count]] if isinstance(clip_durations, list) and len(clip_durations) == shot_count else [float(window_seconds)] * shot_count
+    boundaries = []
+    cursor = 0.0
+    for index, duration in enumerate(durations):
+        start = cursor
+        end = cursor + duration
+        boundaries.append((start, end))
+        cursor = end
         windows.append({
             "shot": index + 1,
             "start": round(start, 3),
@@ -4533,7 +4770,7 @@ def build_intro_narration_windows(
             seg_end = float(segment.get("end", seg_start))
         except (TypeError, ValueError):
             continue
-        if not (seg_end >= 0 and seg_start < shot_count * window_seconds):
+        if not (seg_end >= 0 and seg_start < cursor):
             continue
 
         raw_words = segment.get("words")
@@ -4553,7 +4790,7 @@ def build_intro_narration_windows(
                 # particular, do not drop the final spoken word just because its end
                 # timestamp extends a fraction past the 64-second intro boundary.
                 anchor_time = max(0.0, word_start)
-                window_index = int(anchor_time // float(window_seconds))
+                window_index = next((i for i, (left, right) in enumerate(boundaries) if left <= anchor_time < right), -1)
                 if 0 <= window_index < shot_count:
                     words_by_window[window_index].append(token)
         else:
@@ -4562,7 +4799,7 @@ def build_intro_narration_windows(
             text = str(segment.get("text", "") or "").strip()
             if text:
                 midpoint = max(0.0, (seg_start + seg_end) / 2.0)
-                window_index = int(midpoint // float(window_seconds))
+                window_index = next((i for i, (left, right) in enumerate(boundaries) if left <= midpoint < right), -1)
                 if 0 <= window_index < shot_count:
                     fallback_segments_by_window[window_index].append(text)
 
@@ -4590,14 +4827,15 @@ def generate_intro_storyboard_gemini(
     target_lang: str = "ru",
     timed_windows: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Create eight linked eight-second opening shots (about 64 seconds total)."""
+    """Create linked opening shots matching the persisted floating-intro windows."""
     chars = "\n".join(
         f"- {name}: {desc}" for name, desc in (characters or {}).items()
     ) or "Story-accurate figures in authentic attire matching the era."
 
     setting = json.dumps(context or {}, ensure_ascii=False)
     visual_language = narration_language_name(target_lang)
-    windows = timed_windows if isinstance(timed_windows, list) and len(timed_windows) == INTRO_SHOT_COUNT else []
+    shot_count = len(timed_windows) if isinstance(timed_windows, list) and timed_windows else INTRO_SHOT_COUNT
+    windows = timed_windows if isinstance(timed_windows, list) and len(timed_windows) == shot_count else []
     if windows:
         timed_narration_block = "\n".join(
             f"SHOT {int(item.get('shot', i + 1))} | {_format_intro_timecode(float(item.get('start', i * FLOW_CLIP_SECONDS)))}-"
@@ -4613,8 +4851,8 @@ def generate_intro_storyboard_gemini(
 
     prompt = f"""
 You are an elite visual director working in this selected style: {visual_style_description("video")}.
-Create EXACTLY {INTRO_SHOT_COUNT} consecutive cinematic video prompts for Google Flow.
-Each generated clip must be exactly {FLOW_CLIP_SECONDS:g} seconds long in the final timeline; the complete intro is {INTRO_TARGET_SECONDS:g} seconds.
+Create EXACTLY {shot_count} consecutive cinematic video prompts for Google Flow.
+Each generated clip must match its supplied Whisper time window; the complete intro duration is the sum of those windows.
 
 CRITICAL NARRATION-TO-IMAGE SYNCHRONIZATION:
 Each numbered shot corresponds ONLY to its own fixed time window and exact spoken words below.
@@ -4655,8 +4893,8 @@ RULES:
 - AUDIO: ONLY very soft natural location ambience (gentle wind, footsteps, fabric movement, room tone, mild weather). Absolutely NO dialogue, voice-over, music, melody, humming, whistling, shrill bird calls, squeals, screeches, metallic squeaks, sharp whooshes, sudden stingers, abrupt impacts, or piercing high tones. Keep ambience smooth and quiet; prefer near-silence to harsh or unnatural sound.
 - SILENT VISUAL PERFORMANCE (CRITICAL): The intro is a silent visual illustration under a separate narrator. Every visible person's mouth must remain gently closed and their lips completely still for all frames. Never show anyone talking, whispering, shouting, singing, mouthing words, lip-syncing, or moving their lips as if speaking. Do not show a character mid-sentence or addressing another character. When the narration quotes or describes dialogue, show the listener's silent reaction, a restrained glance, a small closed-mouth expression, hands/objects, an over-the-shoulder view, or another visual consequence instead of depicting the act of speaking. Prefer profile, three-quarter, or wider compositions; avoid talking-head close-ups. This rule overrides any dialogue/action described in the narration for the visual performance only. The scene may still show the relevant people and story action, but all mouths stay closed and still.
 
-Return ONLY a valid JSON array containing exactly {INTRO_SHOT_COUNT} objects. Every object must contain:
-- `shot`: integer 1 to {INTRO_SHOT_COUNT}
+Return ONLY a valid JSON array containing exactly {shot_count} objects. Every object must contain:
+- `shot`: integer 1 to {shot_count}
 - `cast`: exactly one of `NONE`, `PROTAGONIST`, `SUPPORTING`, `BOTH`
 - `prompt`: a complete Flow video prompt; do not put a CAST marker inside the prompt
 Example shape:
@@ -4678,10 +4916,10 @@ Example shape:
             match = re.search(r"\[.*\]", res, re.DOTALL)
             if match:
                 data = json.loads(match.group(0))
-                if isinstance(data, list) and len(data) == INTRO_SHOT_COUNT:
+                if isinstance(data, list) and len(data) == shot_count:
                     # Respect the model's explicit shot IDs instead of assuming its
                     # JSON array order can never be shuffled.
-                    ordered_data: list[dict[str, Any] | None] = [None] * INTRO_SHOT_COUNT
+                    ordered_data: list[dict[str, Any] | None] = [None] * shot_count
                     for fallback_index, raw_item in enumerate(data, start=1):
                         if not isinstance(raw_item, dict):
                             raise ValueError("Storyboard item is not an object")
@@ -4689,7 +4927,7 @@ Example shape:
                             shot_number = int(raw_item.get("shot", fallback_index))
                         except (TypeError, ValueError):
                             shot_number = fallback_index
-                        if not 1 <= shot_number <= INTRO_SHOT_COUNT or ordered_data[shot_number - 1] is not None:
+                        if not 1 <= shot_number <= shot_count or ordered_data[shot_number - 1] is not None:
                             raise ValueError(f"Storyboard has invalid/duplicate shot number: {shot_number}")
                         ordered_data[shot_number - 1] = raw_item
                     if any(item is None for item in ordered_data):
@@ -4730,13 +4968,13 @@ Example shape:
     place_hint = str((context or {}).get("setting", "the story's stated setting"))
     style_prefix = visual_style_description("video")
     fallback: list[dict[str, Any]] = []
-    for index in range(INTRO_SHOT_COUNT):
+    for index in range(shot_count):
         window = windows[index] if windows else {}
         excerpt = str(window.get("text", "") or "").strip()
         if excerpt:
             shot_core = (
                 f"Show a visually clear, literal-but-cinematic interpretation of this exact spoken narration "
-                f"for this 8-second interval: {excerpt}. Depict only the people, object, action, place, "
+                f"for this assigned narration interval: {excerpt}. Depict only the people, object, action, place, "
                 f"or relationship conveyed by these words, in {place_hint}, {era_hint}. "
                 "Do not add another event or unrelated cutaway. Use one restrained continuous action."
             )
@@ -11225,7 +11463,27 @@ def calculate_pause_aligned_intervals(
                        "_sentence_from": group[0]["id"], "_sentence_to": group[-1]["id"]})
     if result:
         result[-1]["end"] = float(audio_duration)
-    return [x for x in result if x["end"] > x["start"]]
+    # Final hard cap: split any residual >22s interval at the nearest Whisper word boundary.
+    capped = []
+    for interval in result:
+        pending = dict(interval)
+        while float(pending["end"]) - float(pending["start"]) > 22.0:
+            left = float(pending["start"]); right = float(pending["end"])
+            target = (left + right) / 2.0
+            cut = _nearest_whisper_cut(segments, target, left + 5.5, right - 5.5)
+            if cut <= left + 0.05 or cut >= right - 0.05:
+                cut = target
+            second = dict(pending)
+            pending["end"] = round(cut, 3)
+            pending["duration"] = round(cut - left, 3)
+            second["start"] = round(cut, 3)
+            second["scene_break"] = False
+            second["pause_before"] = 0.0
+            pending["_split_continuation"] = True
+            capped.append(pending)
+            pending = second
+        capped.append(pending)
+    return [x for x in capped if x["end"] > x["start"]]
 
 
 def fit_semantic_scene_count(
@@ -11314,7 +11572,7 @@ def plan_semantic_scene_intervals(
             "Group these numbered Whisper transcript sentences into visual scenes for a documentary. "
             f"Each scene should last {min_dur:.0f}-{max_dur:.0f} seconds; target about {target_count} scenes "
             "(acceptable count ±20%). Start a new scene when action, location, character, or time changes. "
-            "Set scene_break=true only for a noticeable location/time/meaning-block change. "
+            "Set scene_break=true only for a genuine location, time, or story-act change; aim for roughly 25-35% of scenes, not every sentence boundary. "
             "Return ONLY strict JSON array: [{\"from\":1,\"to\":3,\"scene_break\":false}, ...]. "
             "Cover every sentence exactly once, in order, with contiguous ranges. Do not invent IDs.\n"
             + numbered
@@ -11364,13 +11622,20 @@ def plan_semantic_scene_intervals(
                 {"words": block_words}, block_end, block_start, min_dur, target_dur, max_dur
             )
             local_groups: list[dict] = []
-            for interval in fallback_intervals:
-                matched = [unit for unit in units
-                           if float(unit["end"]) > float(interval["start"])
-                           and float(unit["start"]) < float(interval["end"])]
-                if matched:
+            if fallback_intervals:
+                by_iv: dict[int, list[dict]] = {}
+                for unit in units:
+                    u_mid = 0.5 * (float(unit["start"]) + float(unit["end"]))
+                    iv_idx = len(fallback_intervals) - 1
+                    for k_iv, iv in enumerate(fallback_intervals):
+                        if u_mid <= float(iv["end"]) or k_iv == len(fallback_intervals) - 1:
+                            iv_idx = k_iv
+                            break
+                    by_iv.setdefault(iv_idx, []).append(unit)
+                for k_iv in sorted(by_iv):
+                    grp_units = by_iv[k_iv]
                     local_groups.append({
-                        "from": matched[0]["id"], "to": matched[-1]["id"], "scene_break": False
+                        "from": grp_units[0]["id"], "to": grp_units[-1]["id"], "scene_break": False
                     })
             parsed = local_groups or [{"from": units[0]["id"], "to": units[-1]["id"], "scene_break": False}]
 
@@ -11382,7 +11647,7 @@ def plan_semantic_scene_intervals(
             pieces: list[list[dict]] = []
             piece: list[dict] = []
             for sentence in chunk:
-                if piece and float(sentence["end"]) - float(piece[0]["start"]) > 23.0:
+                if piece and float(sentence["end"]) - float(piece[0]["start"]) > max_dur:
                     pieces.append(piece)
                     piece = []
                 piece.append(sentence)
@@ -11398,7 +11663,8 @@ def plan_semantic_scene_intervals(
             chunk = [x for x in units if group["from"] <= x["id"] <= group["to"]]
             dur = float(chunk[-1]["end"]) - float(chunk[0]["start"])
             if dur < 6.5:
-                if merged:
+                prev_start = float(next(x["start"] for x in units if x["id"] == merged[-1]["from"])) if merged else 0.0
+                if merged and (float(chunk[-1]["end"]) - prev_start) <= max_dur:
                     merged[-1]["to"] = group["to"]
                 elif pending_short is None:
                     pending_short = dict(group)
@@ -11444,7 +11710,34 @@ def plan_semantic_scene_intervals(
     if result:
         result[0]["start"] = float(start_time)
         result[-1]["end"] = float(audio_duration)
-    return [x for x in result if x["end"] > x["start"]]
+    capped_result = []
+    for _item in result:
+        if float(_item["end"]) <= float(_item["start"]):
+            continue
+        _stack = [dict(_item)]
+        while _stack:
+            _cur = _stack.pop(0)
+            _s, _e = float(_cur["start"]), float(_cur["end"])
+            if (_e - _s) > max_dur + 0.05:
+                _mid = _s + (_e - _s) * 0.5
+                _lo = max(_s + min_dur * 0.65, _s + 5.0)
+                _hi = min(_e - min_dur * 0.65, _e - 5.0)
+                if _hi > _lo:
+                    _cut = _nearest_whisper_cut(segments, _mid, _lo, _hi)
+                    if not (_lo <= _cut <= _hi):
+                        _cut = round(_mid, 3)
+                else:
+                    _cut = round(_mid, 3)
+                _left = dict(_cur)
+                _left["end"] = round(_cut, 3)
+                _right = dict(_cur)
+                _right["start"] = round(_cut, 3)
+                _right["scene_break"] = False
+                _right["pause_before"] = 0.0
+                _stack = [_left, _right] + _stack
+            else:
+                capped_result.append(_cur)
+    return [x for x in capped_result if x["end"] > x["start"]]
 
 
 def calculate_dynamic_slide_intervals(
@@ -11810,8 +12103,35 @@ _LIVING_NEGATION_PATTERN = re.compile(
 )
 
 
+def _strip_prompt_boilerplate(text: str) -> str:
+    cleaned = str(text or "")
+    cleaned = re.sub(
+        rf"\s*{re.escape(FLOW_FINAL_STYLE_LOCK_START)}.*?{re.escape(FLOW_FINAL_STYLE_LOCK_END)}\s*",
+        " ", cleaned, flags=re.IGNORECASE | re.DOTALL,
+    )
+    cleaned = re.split(rf"(?i){re.escape(FLOW_FINAL_STYLE_LOCK_START)}", cleaned, maxsplit=1)[0]
+    for st in ("photorealistic", "colorful_painterly", "comic_explainer", "cartoon_2d"):
+        for mk in ("image", "video"):
+            for snippet in (visual_style_description(mk, st), visual_style_rules(mk, st)):
+                if snippet:
+                    cleaned = cleaned.replace(snippet, " ")
+    for sep_pat in (
+        r"(?im)^\s*[-?*]?\s*(?:STYLE LOCK|VISUAL STYLE(?:\s*\([^)]*\))?|VISUAL MEDIUM(?:\s+FIRST)?|NEGATIVE(?: PROMPT)?|CONTENT SAFETY|SAFETY RULES|CAMERA RULES|LANGUAGE RULE|TEXT RULE|AUDIO RULE|DO NOT|AVOID|IMPORTANT|CRITICAL)\s*[:\-]",
+        r"(?i)(?<=[.!?\n])\s*[-?*]?\s*(?:STYLE LOCK|VISUAL STYLE(?:\s*\([^)]*\))?|NEGATIVE(?: PROMPT)?|CONTENT SAFETY|SAFETY RULES|CAMERA RULES)\s*[:\-]",
+    ):
+        parts = re.split(sep_pat, cleaned, maxsplit=1)
+        if len(parts) > 1 and parts[0].strip():
+            cleaned = parts[0]
+    cleaned = re.sub(
+        r"(?i)\b(?:first|second|third)[-\s]person\b|\bman[-\s]made\b|\bsimplified\s+rounded\s+human\s+character\s+designs?\b|\bexpressive\s+(?:but\s+coherent\s+)?faces?\b|\bkeep\s+faces?\s+recognisable\b|\bbelievable\s+anatomy\b|\bno\s+(?:talking[-\s]head|people|persons?|humans?|figures?|characters?)\b|\bwithout\s+(?:any\s+)?(?:a\s+)?(?:people|persons?|humans?|figures?|characters?)\b|\b(?:when|if)\s+a\s+(?:person|face)\s+is\s+visible\b",
+        " ",
+        cleaned,
+    )
+    return cleaned
+
 def _find_positive_living_match(text: str):
-    """Find a positive person/animal cue while ignoring common negative prompt text."""
+    """Find a positive person/animal cue while ignoring common negative/boilerplate prompt text."""
+    text = _strip_prompt_boilerplate(text)
     for match in _LIVING_SUBJECT_PATTERN.finditer(text or ""):
         token = match.group(0).lower()
         # Avoid matching "man" inside the style phrase "man-made structure".
@@ -11846,7 +12166,7 @@ def scene_has_living_subject(
         str(record.get("visual_prompt", "")),
         str(record.get("scene_description", "")),
     ]
-    visual_prompt = " ".join(p for p in visual_prompt_parts if p).strip()
+    visual_prompt = _strip_prompt_boilerplate(" ".join(p for p in visual_prompt_parts if p)).strip()
     plan_text = str(scene_plan or record.get("plan", ""))
 
     if visual_prompt:
@@ -11890,8 +12210,11 @@ def choose_parallax_motion_profile(
 ) -> dict[str, Any]:
     """Choose deterministic 2.5D movement; living subjects retain centered calibrated depth."""
     living, reason = scene_has_living_subject(record, scene_plan=scene_plan, characters=characters, image_path=None)
-    prompt = " ".join([str(record.get("prompt", "")), str(record.get("visual_prompt", "")),
-                       str(record.get("scene_description", "")), str(scene_plan or record.get("plan", ""))]).lower()
+    raw_visual_prompt = " ".join([str(record.get("prompt", "")), str(record.get("visual_prompt", "")),
+                                  str(record.get("scene_description", ""))])
+    raw_visual_prompt = re.split(r"(?im)^\s*(?:STYLE LOCK|NEGATIVE(?: PROMPT)?|DO NOT|AVOID|INSTRUCTIONS?)\s*[:\-]", raw_visual_prompt)[0]
+    raw_visual_prompt = re.sub(r"(?i)\b(?:no person|without people|no humans|first-person|third-person|no talking[- ]head)\b", " ", raw_visual_prompt)
+    prompt = raw_visual_prompt.lower()
     landscape_cues = re.compile(
         r"\b(?:landscape|wide shot|panorama|desert|mountain|mountains|valley|plain|road|trail|forest|woods|coast|ocean|sea|river|lake|field|horizon|skyline|cityscape|village|architecture|building|buildings|ruins|temple|castle|fortress|street|courtyard|interior|hall|room|corridor|canyon|cliff|waterfall|bridge|object|objects|still life|пейзаж|горы|пустыня|долина|дорога|лес|река|озеро|море|океан|поле|горизонт|здание|архитектура|руины|замок|улица|двор|интерьер|зал|комната|коридор|предмет)\b",
         re.IGNORECASE,
@@ -12143,7 +12466,7 @@ def render_parallax_slide(
             "-s", f"{output_w}x{output_h}", "-r", str(fps), "-i", "pipe:0",
             "-vf", video_filter,
             "-c:v", encoder, *encoder_args,
-            "-pix_fmt", "yuv420p", "-an", "-t", f"{duration:.3f}",
+            "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-an", "-t", f"{duration:.3f}",
             *FFMPEG_CLEAN_META_VIDEO, str(temp_path),
         ]
         proc = None
@@ -12275,7 +12598,7 @@ def inspect_mp4_provenance(path: Path) -> dict[str, Any]:
     try:
         probe = subprocess.run(
             ["ffprobe", "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", timeout=30,
         )
         if probe.returncode == 0 and probe.stdout.strip():
             parsed = json.loads(probe.stdout)
@@ -12321,7 +12644,7 @@ def has_audio_stream(path: Path) -> bool:
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=30,
         )
         return bool(result.stdout.strip())
@@ -12368,11 +12691,11 @@ def _is_native_fhd_h264(path: Path, target_duration: float | None = None) -> boo
         result = subprocess.run(
             [
                 "ffprobe", "-v", "error", "-select_streams", "v:0",
-                "-show_entries", "stream=codec_name,width,height,pix_fmt,avg_frame_rate",
+                "-show_entries", "stream=codec_name,profile,width,height,pix_fmt,avg_frame_rate,sample_aspect_ratio,time_base",
                 "-of", "json", str(path),
             ],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            text=True, timeout=30, check=True,
+            text=True, encoding="utf-8", errors="replace", timeout=30, check=True,
         )
         streams = json.loads(result.stdout).get("streams", [])
         if not streams:
@@ -12389,6 +12712,9 @@ def _is_native_fhd_h264(path: Path, target_duration: float | None = None) -> boo
             and int(stream.get("width", 0)) == 1920
             and int(stream.get("height", 0)) == 1080
             and stream.get("pix_fmt") == "yuv420p"
+            and stream.get("profile") in {"High", "Main"}
+            and stream.get("sample_aspect_ratio") == "1:1"
+            and stream.get("time_base") == "1/15360"
             and abs(fps_value - FPS) < 0.02
         ):
             return False
@@ -12407,48 +12733,20 @@ def normalize_clip(
     target_duration: float | None = None,
     preserve_audio: bool = False,
 ) -> None:
-    """Normalize clips but stream-copy an already-compliant FHD video stream.
+    """Re-encode every montage input to a shared CFR/H.264 stream and zero-based PTS.
 
-    This avoids an unnecessary lossy video encode after the native-resolution MiDaS
-    render. Only audio may be re-encoded when the montage requires a uniform audio track.
+    A deterministic video stream contract is more important here than avoiding one
+    additional encode: it prevents intro/main concat seams from inheriting irregular
+    packet timestamps or incompatible MP4 time bases.
     """
     duration_arg = ["-t", f"{target_duration:.3f}"] if target_duration is not None else []
 
-    if _is_native_fhd_h264(input_path, target_duration):
-        duration = target_duration if target_duration is not None else (get_duration(input_path) or 0.1)
-        if preserve_audio and not has_audio_stream(input_path):
-            fast_cmd = [
-                "ffmpeg", "-y", "-i", str(input_path),
-                "-f", "lavfi", "-t", f"{duration:.3f}", "-i",
-                "anullsrc=channel_layout=stereo:sample_rate=44100",
-                "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
-                "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
-                "-t", f"{duration:.3f}", str(output_path),
-            ]
-        elif preserve_audio:
-            fast_cmd = [
-                "ffmpeg", "-y", "-i", str(input_path),
-                "-map", "0:v:0", "-map", "0:a:0", "-c:v", "copy",
-                "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
-                "-af", "aresample=async=1:first_pts=0",
-                "-t", f"{duration:.3f}", str(output_path),
-            ]
-        else:
-            fast_cmd = [
-                "ffmpeg", "-y", "-i", str(input_path),
-                "-map", "0:v:0", "-c:v", "copy", "-an",
-                "-t", f"{duration:.3f}", str(output_path),
-            ]
-        try:
-            subprocess.run(fast_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return
-        except Exception as exc:
-            output_path.unlink(missing_ok=True)
-            log.warning("[Montage] Не удалось быстро скопировать совместимый FHD-поток; выполняю полную нормализацию: %s", exc)
+    # Always re-encode concat inputs: packet-copy can retain non-zero/irregular PTS
+    # and incompatible time bases at the intro/main seam.
 
     vf = (
         "scale=1920:1080:force_original_aspect_ratio=decrease,"
-        "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1"
+        "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,setpts=PTS-STARTPTS"
     )
 
     if preserve_audio:
@@ -12462,7 +12760,7 @@ def normalize_clip(
                 "-i", str(input_path),
                 "-vf", vf,
                 "-r", str(FPS),
-                "-pix_fmt", "yuv420p",
+                "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360",
                 "-c:v", HW_ENCODER,
                 "-preset", ENCODER_PRESET,
                 "-b:v", "8000k",
@@ -12489,6 +12787,7 @@ def normalize_clip(
                 "-map", "1:a:0",
                 "-c:v", HW_ENCODER,
                 "-preset", ENCODER_PRESET,
+                "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360",
                 "-b:v", "8000k",
                 "-c:a", "aac",
                 "-ar", "44100",
@@ -12502,7 +12801,7 @@ def normalize_clip(
             "-i", str(input_path),
             "-vf", vf,
             "-r", str(FPS),
-            "-pix_fmt", "yuv420p",
+            "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360",
             "-c:v", HW_ENCODER,
             "-preset", ENCODER_PRESET,
             "-b:v", "8000k",
@@ -12599,6 +12898,44 @@ def _write_ffconcat_listing(paths: list[Path], listing: Path) -> None:
             handle.write(_ffconcat_file_line(path))
 
 
+def _probe_concat_duration(listing: Path) -> float | None:
+    """Return the demuxed duration of an ffconcat input list."""
+    try:
+        result = subprocess.run(
+            [FFPROBE_BIN, "-v", "error", "-f", "concat", "-safe", "0", "-i", str(listing),
+             "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            encoding="utf-8", errors="replace", timeout=60, check=True,
+        )
+        value = float((result.stdout or "").strip().splitlines()[-1])
+        return value if math.isfinite(value) and value > 0 else None
+    except Exception as exc:
+        log.warning("[A/V Timing] Could not probe ffconcat input duration (%s): %s", listing.name, exc)
+        return None
+
+
+def _video_stream_signature(path: Path) -> tuple[Any, ...] | None:
+    """Read fields that must match before a safe MP4 stream-copy concat."""
+    try:
+        result = subprocess.run(
+            [FFPROBE_BIN, "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=codec_name,profile,pix_fmt,r_frame_rate,time_base,width,height,sample_aspect_ratio",
+             "-of", "json", str(path)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            encoding="utf-8", errors="replace", timeout=30, check=True,
+        )
+        streams = json.loads(result.stdout).get("streams", [])
+        if not streams:
+            return None
+        stream = streams[0]
+        keys = ("codec_name", "profile", "pix_fmt", "r_frame_rate", "time_base",
+                "width", "height", "sample_aspect_ratio")
+        return tuple(stream.get(key) for key in keys)
+    except Exception as exc:
+        log.warning("[Montage] ffprobe stream signature failed for %s: %s", path.name, exc)
+        return None
+
+
 def _run_concat_demuxer_with_fallback(
     listing: Path,
     temp_output: Path,
@@ -12607,16 +12944,17 @@ def _run_concat_demuxer_with_fallback(
     preserve_audio: bool,
     context: str,
     duration_hint: float | None = None,
+    allow_stream_copy: bool = True,
 ) -> bool:
-    """Try packet-copy first, then re-encode if streams aren't concat-compatible."""
+    """Try packet-copy only when the caller has verified compatible stream signatures."""
     timeout = max(300, int(duration_hint * 10)) if duration_hint else 900
     base = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
         "-f", "concat", "-safe", "0", "-i", str(listing),
     ]
-    strategies: list[tuple[str, list[str]]] = [
-        ("stream-copy", ["-c", "copy", *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO)]),
-    ]
+    strategies: list[tuple[str, list[str]]] = []
+    if allow_stream_copy:
+        strategies.append(("stream-copy", ["-c", "copy", *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO)]))
     audio_args = (
         ["-map", "0:a:0?", "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2"]
         if preserve_audio
@@ -12627,13 +12965,15 @@ def _run_concat_demuxer_with_fallback(
             "-map", "0:v:0", *audio_args,
             "-c:v", HW_ENCODER, "-preset", ENCODER_PRESET,
             "-b:v", "8000k", "-maxrate", "10000k",
-            "-pix_fmt", "yuv420p", "-r", str(FPS), "-movflags", "+faststart",
+            "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360",
+            "-vf", f"fps={FPS},setpts=PTS-STARTPTS,setsar=1", "-r", str(FPS), "-movflags", "+faststart",
             *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO),
         ]),
         ("software-reencode", [
             "-map", "0:v:0", *audio_args,
             "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-            "-pix_fmt", "yuv420p", "-r", str(FPS), "-movflags", "+faststart",
+            "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360",
+            "-vf", f"fps={FPS},setpts=PTS-STARTPTS,setsar=1", "-r", str(FPS), "-movflags", "+faststart",
             *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO),
         ]),
     ])
@@ -12646,8 +12986,7 @@ def _run_concat_demuxer_with_fallback(
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
-                errors="replace",
+                text=True, encoding="utf-8", errors="replace",
                 timeout=timeout,
             )
             if is_valid_video(temp_output):
@@ -12669,17 +13008,101 @@ def _run_concat_demuxer_with_fallback(
 
 
 def _concat_normalized_parts(parts: list[Path], output_path: Path, temp_dir: Path, preserve_audio: bool = True) -> bool:
-    """Hard-cut fallback for already normalized parts."""
+    """CFR re-encode hard-cut runs; never packet-copy scene boundaries into the montage clock."""
     if not parts:
         return False
     listing = temp_dir / f"{output_path.stem}_fallback_concat.txt"
     _write_ffconcat_listing(parts, listing)
-    temp = output_path.with_suffix(".fallback-temp.mp4")
     total_duration = sum(get_duration(path) or 0.0 for path in parts)
-    return _run_concat_demuxer_with_fallback(
-        listing, temp, output_path, preserve_audio=preserve_audio,
-        context=output_path.name, duration_hint=total_duration or None,
+    if total_duration <= 0.0:
+        raise RuntimeError(f"[A/V Timing] Cannot determine cut-run duration: {output_path.name}")
+    return _reencode_ffconcat_to_duration(
+        listing, output_path, total_duration, preserve_audio=preserve_audio,
+        context=f"{output_path.name} normalized cut-run",
     )
+
+
+
+def _reencode_ffconcat_to_duration(
+    listing: Path,
+    output_path: Path,
+    expected_duration: float,
+    *,
+    preserve_audio: bool = False,
+    context: str = "concat",
+) -> bool:
+    """Re-encode to a deterministic CFR clock without hiding missing content in a long freeze."""
+    target = max(0.1, float(expected_duration))
+    source_duration = _probe_concat_duration(listing)
+    if source_duration is None:
+        raise RuntimeError(f"[A/V Timing] {context}: cannot determine input duration; refusing duration padding")
+    missing = max(0.0, target - source_duration)
+    if missing > MAX_ALIGNMENT_PAD_SECONDS:
+        raise RuntimeError(
+            f"[A/V Timing] {context}: source is short by {missing:.3f}s "
+            f"(limit {MAX_ALIGNMENT_PAD_SECONDS:.3f}s); rebuild from original all_parts required"
+        )
+    pad_duration = min(MAX_ALIGNMENT_PAD_SECONDS, missing)
+    temp_output = output_path.with_name(output_path.stem + ".exact-temp.mp4")
+    video_filter = (
+        f"tpad=stop_mode=clone:stop_duration={pad_duration:.6f},"
+        f"fps={FPS},trim=duration={target:.6f},setpts=PTS-STARTPTS,setsar=1"
+    )
+    audio_args = (
+        ["-map", "0:a:0?", "-af", f"apad,atrim=duration={target:.6f}",
+         "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2"]
+        if preserve_audio else ["-an"]
+    )
+    encoders = [
+        (HW_ENCODER, ["-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", "8000k", "-maxrate", "10000k"]),
+        ("libx264", ["-preset", "fast", "-crf", "18"]),
+    ]
+    failures: list[str] = []
+    try:
+        for encoder, encoder_args in encoders:
+            try:
+                temp_output.unlink(missing_ok=True)
+                cmd = [
+                    FFMPEG_BIN, "-hide_banner", "-loglevel", "error", "-y",
+                    "-fflags", "+genpts", "-f", "concat", "-safe", "0", "-i", str(listing),
+                    "-map", "0:v:0", *audio_args, "-vf", video_filter,
+                    "-c:v", encoder, *encoder_args, "-pix_fmt", "yuv420p", "-profile:v", "high",
+                    "-r", str(FPS), "-video_track_timescale", "15360",
+                    "-t", f"{target:.6f}", "-movflags", "+faststart",
+                    *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO),
+                    str(temp_output),
+                ]
+                completed = subprocess.run(
+                    cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                    timeout=max(300, int(target * 10)),
+                )
+                actual = get_duration(temp_output)
+                delta = abs(float(actual) - target) if actual is not None else float("inf")
+                if is_valid_video(temp_output) and actual is not None and delta < 0.25:
+                    temp_output.replace(output_path)
+                    log.info(
+                        "[A/V Timing] %s exact re-encode PASS | input=%.3fs target=%.3fs actual=%.3fs "
+                        "delta=%.3fs pad=%.3fs encoder=%s",
+                        context, source_duration, target, actual, delta, pad_duration, encoder,
+                    )
+                    return True
+                stderr_text = completed.stderr.decode("utf-8", errors="replace") if isinstance(completed.stderr, bytes) else str(completed.stderr or "")
+                failures.append(f"{encoder}: invalid output or duration delta={delta:.3f}s {stderr_text[-700:]}")
+            except Exception as exc:
+                detail = getattr(exc, "stderr", b"")
+                if isinstance(detail, bytes):
+                    detail = detail.decode("utf-8", errors="replace")
+                elif not isinstance(detail, str):
+                    detail = str(detail)
+                failures.append(f"{encoder}: {(detail or str(exc))[-1000:]}")
+        raise RuntimeError(
+            f"[A/V Timing] {context}: exact re-encode failed; target={target:.3f}s "
+            f"input={source_duration:.3f}s pad_limit={MAX_ALIGNMENT_PAD_SECONDS:.3f}s; "
+            + " | ".join(failures)
+        )
+    finally:
+        if temp_output.exists():
+            temp_output.unlink(missing_ok=True)
 
 
 def _render_crossfade_group(
@@ -12721,7 +13144,8 @@ def _render_crossfade_group(
         base_cmd.extend(["-i", str(path)])
     if preserve_audio:
         base_cmd.extend(["-f", "lavfi", "-t", f"{total_duration:.3f}", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"])
-    base_cmd.extend(["-filter_complex", ";".join(filters), "-map", f"[{current_label}]"])
+    filters.append(f"[{current_label}]setsar=1[vout]")
+    base_cmd.extend(["-filter_complex", ";".join(filters), "-map", "[vout]"])
     if preserve_audio:
         base_cmd.extend(["-map", f"{len(input_paths)}:a:0", "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2"])
     else:
@@ -12730,7 +13154,7 @@ def _render_crossfade_group(
                 ("libx264", ["-preset", "fast", "-crf", "20"])]
     for encoder, encoder_args in encoders:
         temp_output.unlink(missing_ok=True)
-        cmd = base_cmd + ["-c:v", encoder, *encoder_args, "-pix_fmt", "yuv420p", "-r", str(FPS),
+        cmd = base_cmd + ["-c:v", encoder, *encoder_args, "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-r", str(FPS),
                           "-t", f"{total_duration:.3f}", *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO), str(temp_output)]
         try:
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=max(900, int(total_duration * 5)))
@@ -12740,7 +13164,16 @@ def _render_crossfade_group(
                 log.info("[Transitions] %s segments; duration %.3fs; transition specs=%s", len(input_paths), actual, transitions)
                 return True
         except Exception as exc:
-            log.warning("[Transitions] xfade group failed on %s: %s", encoder, exc)
+            stderr_tail = getattr(exc, "stderr", b"")
+            if isinstance(stderr_tail, bytes):
+                stderr_tail = stderr_tail.decode("utf-8", errors="replace")
+            elif not isinstance(stderr_tail, str):
+                stderr_tail = str(stderr_tail)
+            stderr_tail = (stderr_tail or "").strip()[-1000:]
+            log.warning(
+                "[Transitions] xfade group failed on %s: %s | stderr tail (last ~1000 chars): %s",
+                encoder, exc, stderr_tail or "<empty>",
+            )
     temp_output.unlink(missing_ok=True)
     return False
 
@@ -12756,8 +13189,9 @@ def concatenate_videos(
     crossfade_duration: float = 0.0,
     transition_start_index: int = 0,
     transitions: list[dict[str, Any]] | None = None,
+    expected_total: float | None = None,
 ) -> bool:
-    """Normalize once, stream-copy hard-cut runs, and xfade only flagged boundaries."""
+    """Normalize once, xfade requested boundaries, and enforce the requested final clock."""
     indexed = [(idx, p, d) for idx, (p, d) in enumerate(video_parts) if p.exists() and is_valid_video(p)]
     if not indexed:
         return False
@@ -12786,7 +13220,7 @@ def concatenate_videos(
         prefix = [x for x in normalized if x[0] < transition_start_index]
         slides = [x for x in normalized if x[0] >= transition_start_index]
         last_source_index = max((x[0] for x in slides), default=-1)
-        # Merge contiguous hard-cut scenes into one stream-copy file each.
+        # Merge contiguous hard-cut scenes into one deterministic CFR file each.
         runs: list[tuple[Path, float]] = []
         run_transitions: list[dict[str, Any]] = []
         current: list[tuple[int, Path, float]] = []
@@ -12797,7 +13231,7 @@ def concatenate_videos(
                 run_path = current[0][1] if len(current) == 1 else temp_dir / f"{output_path.stem}_cutrun_{len(runs):04d}.mp4"
                 if len(current) > 1:
                     if not _concat_normalized_parts([x[1] for x in current], run_path, temp_dir, preserve_audio=preserve_audio):
-                        raise RuntimeError("stream-copy concat of cut run failed")
+                        raise RuntimeError("CFR re-encode concat of cut run failed")
                     created.append(run_path)
                 runs.append((run_path, sum(x[2] for x in current)))
                 run_transitions.append({"type": boundary["type"], "duration": boundary["duration"]})
@@ -12806,7 +13240,7 @@ def concatenate_videos(
             run_path = current[0][1] if len(current) == 1 else temp_dir / f"{output_path.stem}_cutrun_{len(runs):04d}.mp4"
             if len(current) > 1:
                 if not _concat_normalized_parts([x[1] for x in current], run_path, temp_dir, preserve_audio=preserve_audio):
-                    raise RuntimeError("stream-copy concat of final cut run failed")
+                    raise RuntimeError("CFR re-encode concat of final cut run failed")
                 created.append(run_path)
             runs.append((run_path, sum(x[2] for x in current)))
 
@@ -12817,10 +13251,20 @@ def concatenate_videos(
             slide_output = temp_dir / f"{output_path.stem}_mixed_transitions.mp4"
             if not _render_crossfade_group([x[0] for x in runs], [x[1] for x in runs],
                                            slide_output, temp_dir, preserve_audio, run_transitions):
-                # If transition render fails, retain every scene and preserve exact clock via hard cuts.
-                log.warning("[Transitions] Mixed xfade fallback to stream-copy hard cuts; all scenes retained.")
-                if not _concat_normalized_parts([x[0] for x in runs], slide_output, temp_dir, preserve_audio=preserve_audio):
-                    raise RuntimeError("fallback stream-copy concat failed")
+                # Do not packet-copy the mixed-transition fallback: packet boundaries can
+                # drop a terminal frame or shorten a cut-run. Re-encode to the scheduled clock.
+                slide_expected = sum(float(x[2]) for x in slides)
+                log.warning("[Transitions] Mixed xfade fallback: deterministic hard-cut re-encode | scenes=%s target=%.3fs",
+                            len(slides), slide_expected)
+                # Rebuild from every normalized source scene, not the intermediate
+                # stream-copied cut-runs that were prepared only as xfade inputs.
+                fallback_listing = temp_dir / f"{output_path.stem}_mixed_fallback_inputs.txt"
+                _write_ffconcat_listing([x[1] for x in slides], fallback_listing)
+                if not _reencode_ffconcat_to_duration(
+                    fallback_listing, slide_output, slide_expected,
+                    preserve_audio=preserve_audio, context=f"{output_path.name} mixed-xfade fallback",
+                ):
+                    raise RuntimeError("fallback re-encode concat failed")
             created.append(slide_output)
 
         final_parts = [x[1] for x in prefix]
@@ -12831,15 +13275,44 @@ def concatenate_videos(
         listing = temp_dir / f"{output_path.stem}_concat_inputs.txt"
         _write_ffconcat_listing(final_parts, listing)
         temp = output_path.with_suffix(".temp.mp4")
-        total_duration = sum(get_duration(p) or 0.0 for p in final_parts)
-        if not _run_concat_demuxer_with_fallback(listing, temp, output_path, preserve_audio=preserve_audio,
-                                                  context=output_path.name, duration_hint=total_duration or None):
+        packet_duration = sum(get_duration(p) or 0.0 for p in final_parts)
+        timeline_duration = sum(float(x[2]) for x in normalized)
+        target_duration = max(0.1, float(expected_total)) if expected_total is not None else timeline_duration
+        signatures = [_video_stream_signature(part) for part in final_parts]
+        signatures_match = bool(signatures) and all(sig is not None and sig == signatures[0] for sig in signatures)
+        if not signatures_match:
+            log.warning(
+                "[Montage] prefix/slide stream mismatch; disabling stream-copy and forcing CFR re-encode | inputs=%s",
+                [part.name for part in final_parts],
+            )
+        if not _run_concat_demuxer_with_fallback(
+            listing, temp, output_path, preserve_audio=preserve_audio,
+            context=output_path.name, duration_hint=target_duration or packet_duration or None,
+            # With more than one file (notably intro + main montage), prefer a
+            # fresh CFR encode even if ffprobe fields happen to match: this resets PTS
+            # at the seam and avoids packet-timestamp discontinuities.
+            allow_stream_copy=signatures_match and len(final_parts) == 1,
+        ):
             raise RuntimeError(f"Не удалось собрать {output_path.name}")
         actual_total = get_duration(output_path)
-        expected_total = sum(x[2] for x in normalized)
-        if actual_total is not None and abs(actual_total - expected_total) >= 0.25:
-            log.error("[A/V Timing] concat duration mismatch: expected=%.3fs actual=%.3fs delta=%.3fs",
-                      expected_total, actual_total, actual_total - expected_total)
+        if actual_total is None:
+            raise RuntimeError(f"Не удалось определить длительность {output_path.name}")
+        frame_tolerance = max(0.01, 1.0 / max(1, int(FPS)))
+        if abs(actual_total - target_duration) > frame_tolerance:
+            log.warning("[A/V Timing] concat clock differs from target; exact re-encode required | timeline=%.3fs target=%.3fs actual=%.3fs",
+                        timeline_duration, target_duration, actual_total)
+            if not _reencode_ffconcat_to_duration(
+                listing, output_path, target_duration,
+                preserve_audio=preserve_audio, context=f"{output_path.name} final clock alignment",
+            ):
+                raise RuntimeError(f"A/V duration alignment failed: target={target_duration:.3f}s actual={actual_total:.3f}s")
+            actual_total = get_duration(output_path)
+        final_delta = abs(float(actual_total) - target_duration) if actual_total is not None else float("inf")
+        log.info("[A/V Timing] concat final | timeline=%.3fs target=%.3fs actual=%s delta=%.3fs",
+                 timeline_duration, target_duration,
+                 f"{actual_total:.3f}s" if actual_total is not None else "unknown", final_delta)
+        if actual_total is None or final_delta >= 0.25:
+            raise RuntimeError(f"A/V duration mismatch: target={target_duration:.3f}s actual={actual_total} delta={final_delta:.3f}s")
         log.info("✅ [Montage] %s | scenes=%s | cut-runs=%s | transition boundaries=%s",
                  output_path.name, len(normalized), len(runs), len(run_transitions))
         return is_valid_video(output_path)
@@ -12928,11 +13401,308 @@ def prepare_background_music(
     return output
 
 
+
+
+def _chapter_title_for_language(index: int, language: str) -> str:
+    """Return a short, neutral, non-spoiler documentary intertitle in narration language."""
+    lang = str(language or "en").strip().lower().split("-")[0]
+    titles = {
+        "ru": ["Начало истории", "Новый этап", "Смена обстоятельств", "Дальнейший путь", "Важные события", "Следующий поворот"],
+        "en": ["The Beginning", "A New Chapter", "Changing Circumstances", "The Road Ahead", "Key Developments", "Another Turning Point"],
+        "es": ["El comienzo", "Una nueva etapa", "Nuevas circunstancias", "El camino sigue", "Hechos importantes", "Otro giro"],
+        "pl": ["Początek historii", "Nowy etap", "Zmiana okoliczności", "Dalsza droga", "Ważne wydarzenia", "Kolejny zwrot"],
+        "de": ["Der Anfang", "Ein neuer Abschnitt", "Neue Umstände", "Der weitere Weg", "Wichtige Ereignisse", "Eine neue Wendung"],
+        "fr": ["Le début", "Une nouvelle étape", "Nouveaux éléments", "La suite du parcours", "Les faits marquants", "Un autre tournant"],
+        "it": ["L’inizio", "Una nuova fase", "Nuove circostanze", "Il percorso continua", "Fatti importanti", "Un’altra svolta"],
+        "pt": ["O começo", "Uma nova etapa", "Novas circunstâncias", "O caminho adiante", "Fatos importantes", "Outra virada"],
+    }
+    options = titles.get(lang, titles["en"])
+    return options[min(max(0, int(index)), len(options) - 1)]
+
+
+def _contextual_chapter_title(scene: dict[str, Any], index: int, language: str,
+                              at: float, duration: float) -> str:
+    """Prefer a concise scene-derived heading; use position-aware act labels as fallback."""
+    explicit = str(scene.get("chapter_title", "") or "").strip()
+    source = explicit or str(scene.get("text", "") or "").strip()
+    if source:
+        source = re.sub(r"\s+", " ", source)
+        source = re.sub(r"^[\s\-–—•\d.]+", "", source)
+        clause = re.split(r"(?<=[.!?])\s+|[;:]", source, maxsplit=1)[0].strip(" .,:;—-")
+        words = clause.split()
+        if len(words) >= 3:
+            candidate = " ".join(words[:8]).strip(" ,;:.")
+            if len(candidate) > 54:
+                candidate = candidate[:51].rsplit(" ", 1)[0].rstrip(" ,;:.") + "…"
+            return candidate[:56]
+    # "Beginning" is reserved for cards in the opening 40 seconds only.
+    if at <= 40.0:
+        return _chapter_title_for_language(0, language)
+    position = min(5, max(1, int((max(0.0, at) / max(1.0, duration)) * 6)))
+    return _chapter_title_for_language(position, language)
+
+
+def build_chapter_plan(
+    main_clips: list[dict[str, Any]],
+    audio_duration: float,
+    narration_language: str,
+) -> list[dict[str, Any]]:
+    """Build deterministic, sparse chapter cards from scene breaks and Whisper pause cues."""
+    try:
+        duration = max(0.0, float(audio_duration))
+    except (TypeError, ValueError):
+        return []
+    if duration < 180.0 or len(main_clips) < 3 or not ENABLE_CHAPTER_TITLE_CARDS:
+        return []
+
+    # For 7–15 minute stories, aim for 2–4 cards. Longer stories scale slowly,
+    # while the hard 60s spacing prevents clusters even when many scene_break flags exist.
+    if 420.0 <= duration <= 900.0:
+        target_count = min(4, max(2, int(round(duration / 240.0))))
+    else:
+        target_count = min(6, max(1, int(round(duration / 240.0))))
+
+    candidates: list[dict[str, Any]] = []
+    time_cues = re.compile(
+        r"\b(?:meanwhile|years later|months later|the next day|later that year|"
+        r"meanwhile|in another place|back in|in \d{3,4}|"
+        r"тем временем|на следующий день|через несколько лет|спустя годы|"
+        r"позже в том же году|в другом месте|в \d{3,4}|"
+        r"następnego dnia|kilka lat później|tymczasem|"
+        r"al día siguiente|años después|mientras tanto|"
+        r"am nächsten tag|jahre später|unterdessen)\b",
+        re.IGNORECASE,
+    )
+    for index in range(1, len(main_clips)):
+        scene = main_clips[index] if isinstance(main_clips[index], dict) else {}
+        try:
+            at = float(scene.get("start", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if at < 15.0 or duration - at < 15.0:
+            continue
+        text_value = str(scene.get("text", "") or "")
+        is_break = bool(scene.get("scene_break", False))
+        pause = float(scene.get("pause_before", 0.0) or 0.0)
+        cue = bool(time_cues.search(text_value))
+        if is_break or cue or pause >= 0.8:
+            priority = 0 if is_break else (1 if cue else 2)
+            candidates.append({"time": at, "priority": priority, "scene_index": index})
+
+    # Deterministic fallback: use major scene boundaries nearest evenly spaced
+    # targets if the semantic planner supplied too few explicit breaks/pauses.
+    if len(candidates) < target_count:
+        known = {round(float(item["time"]), 2) for item in candidates}
+        for index in range(1, len(main_clips)):
+            scene = main_clips[index] if isinstance(main_clips[index], dict) else {}
+            try:
+                at = float(scene.get("start", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if 15.0 < at < duration - 15.0 and round(at, 2) not in known:
+                candidates.append({
+                    "time": at,
+                    "priority": 3,
+                    "scene_index": index,
+                })
+    if not candidates:
+        log.info("[Chapters] 0 cards: no eligible scene boundaries")
+        return []
+
+    candidates.sort(key=lambda item: (int(item["priority"]), float(item["time"]), int(item["scene_index"])))
+    selected: list[dict[str, Any]] = []
+    for slot in range(1, target_count + 1):
+        target_time = duration * slot / (target_count + 1)
+        available = [
+            item for item in candidates
+            if all(abs(float(item["time"]) - float(chosen["time"])) >= 60.0 for chosen in selected)
+        ]
+        if not available:
+            break
+        chosen = min(
+            available,
+            key=lambda item: (
+                abs(float(item["time"]) - target_time),
+                int(item["priority"]),
+                float(item["time"]),
+            ),
+        )
+        selected.append(chosen)
+    selected.sort(key=lambda item: float(item["time"]))
+
+    result: list[dict[str, Any]] = []
+    for index, item in enumerate(selected):
+        at = round(float(item["time"]), 3)
+        result.append({
+            "index": index + 1,
+            "start": at,
+            "end": round(min(duration - 1.0, at + 4.2), 3),
+            "text": _contextual_chapter_title(
+                main_clips[int(item["scene_index"])] if int(item["scene_index"]) < len(main_clips) and isinstance(main_clips[int(item["scene_index"])], dict) else {},
+                index, narration_language, at, duration,
+            ),
+            "scene_index": int(item["scene_index"]),
+            "source": "scene_break" if int(item["priority"]) == 0 else (
+                "time_or_location_cue" if int(item["priority"]) == 1 else (
+                    "whisper_pause" if int(item["priority"]) == 2 else "sparse_fallback"
+                )
+            ),
+        })
+    return result
+
+
+def _ass_timestamp(seconds: float) -> str:
+    value = max(0.0, float(seconds))
+    hours = int(value // 3600)
+    minutes = int((value % 3600) // 60)
+    whole = int(value % 60)
+    centiseconds = int(round((value - int(value)) * 100.0))
+    if centiseconds >= 100:
+        whole += 1
+        centiseconds = 0
+    if whole >= 60:
+        minutes += 1
+        whole = 0
+    if minutes >= 60:
+        hours += 1
+        minutes = 0
+    return f"{hours}:{minutes:02d}:{whole:02d}.{centiseconds:02d}"
+
+
+def _write_chapter_ass_file(path: Path, chapters: list[dict[str, Any]], visual_style_id: str) -> bool:
+    """Write a transparent, top-left ASS overlay so main captions remain unobstructed."""
+    if not chapters:
+        return False
+    comic = str(visual_style_id or "").strip().lower() == "comic_explainer"
+    bold = -1 if comic else 0
+    outline = 4 if comic else 2
+    # ASS colours are AABBGGRR. Top-left placement avoids the lower subtitle safe area.
+    lines = [
+        "[Script Info]",
+        "ScriptType: v4.00+",
+        "WrapStyle: 2",
+        "ScaledBorderAndShadow: yes",
+        "PlayResX: 1920",
+        "PlayResY: 1080",
+        "",
+        "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+        f"Style: Chapter,Roboto Condensed Black,38,&H00FFFFFF,&H000000FF,&HCC080808,&H70000000,{bold},0,0,0,100,100,0,0,3,{outline},1,7,92,100,92,1",
+        "",
+        "[Events]",
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+    ]
+    for chapter in chapters:
+        try:
+            start = float(chapter.get("start", 0.0) or 0.0)
+            end = float(chapter.get("end", start + 4.2) or (start + 4.2))
+            if end <= start:
+                continue
+            label = re.sub(r"\s+", " ", str(chapter.get("text", "") or "")).strip()
+            label = label.replace("{", "").replace("}", "").replace("\\", "").replace("\r", " ").replace("\n", " ")
+            label = label[:100]
+            if not label:
+                continue
+            lines.append(
+                f"Dialogue: 1,{_ass_timestamp(start)},{_ass_timestamp(end)},Chapter,,0,0,0,,{{\\fad(250,400)}}{label}"
+            )
+        except (TypeError, ValueError, AttributeError):
+            continue
+    try:
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8-sig")
+        return path.is_file() and path.stat().st_size > 100
+    except OSError as exc:
+        log.warning("[Chapters] Не удалось записать ASS-плашки: %s", exc)
+        return False
+
+
+def apply_micro_sfx_to_video(
+    input_path: Path,
+    output_path: Path,
+    event_times: list[float],
+    expected_duration: float,
+) -> bool:
+    """Mix a very quiet low-frequency pulse into an already narrated video, without changing its clock."""
+    if not ENABLE_MICRO_SFX or not event_times or not is_valid_video(input_path):
+        return False
+    duration = get_duration(input_path)
+    if duration is None:
+        return False
+    pulse_duration = max(0.20, min(0.60, float(MICRO_SFX_DURATION)))
+    gain = max(0.0, min(0.08, float(MICRO_SFX_GAIN)))
+    frequency = max(35, min(120, int(MICRO_SFX_FREQUENCY)))
+    pulses = []
+    for raw_time in sorted(set(round(float(value), 3) for value in event_times)):
+        if raw_time < 15.0 or duration - raw_time < 15.0:
+            continue
+        end_time = min(duration - 0.02, raw_time + pulse_duration)
+        actual_span = end_time - raw_time
+        if actual_span <= 0.10:
+            continue
+        pulses.append(
+            f"if(between(t,{raw_time:.3f},{end_time:.3f}),"
+            f"sin(PI*(t-{raw_time:.3f})/{actual_span:.3f}),0)"
+        )
+    if not pulses:
+        return False
+    envelope = "+".join(pulses)
+    filter_complex = (
+        f"[1:a]volume='{gain:.5f}*({envelope})':eval=frame,lowpass=f=170,"
+        "alimiter=limit=0.12:level=false[sfx];"
+        "[0:a][sfx]amix=inputs=2:duration=first:normalize=0:dropout_transition=0,"
+        "alimiter=limit=0.95:level=false[a]"
+    )
+    temp = output_path.with_name(output_path.stem + ".tmp.mp4")
+    try:
+        temp.unlink(missing_ok=True)
+    except OSError as cleanup_exc:
+        log.warning("[SFX] Could not clear stale render temp; skipping accents: %s", cleanup_exc)
+        return False
+    cmd = [
+        FFMPEG_BIN, "-y", "-i", str(input_path),
+        "-f", "lavfi", "-i",
+        f"sine=frequency={frequency}:sample_rate=44100:duration={duration:.3f}",
+        "-filter_complex", filter_complex,
+        "-map", "0:v:0", "-map", "[a]",
+        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+        "-ar", "44100", "-ac", "2", "-t", f"{duration:.3f}",
+        *FFMPEG_CLEAN_META_AV, str(temp),
+    ]
+    try:
+        subprocess.run(
+            cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            timeout=max(180, int(duration * 2.5)),
+        )
+        actual = get_duration(temp)
+        delta = abs(float(actual) - float(expected_duration)) if actual is not None else float("inf")
+        if not is_valid_video(temp) or actual is None or delta >= 0.25:
+            log.warning(
+                "[SFX] Output rejected: valid=%s duration=%s expected=%.3f delta=%.3f",
+                is_valid_video(temp), actual, expected_duration, delta,
+            )
+            temp.unlink(missing_ok=True)
+            return False
+        temp.replace(output_path)
+        log.info(
+            "[SFX] %s micro-accents mixed | gain=%.4f (%.1f dBFS approx) | A/V Timing=PASS delta=%.3fs",
+            len(pulses), gain, 20.0 * math.log10(max(gain, 1e-8)), delta,
+        )
+        return True
+    except Exception as exc:
+        try:
+            temp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        log.warning("[SFX] Micro-accent mix skipped safely: %s", exc)
+        return False
+
+
 def add_audio_to_video(
     video_path: Path,
     voice_path: Path,
     music_path: Path | None,
     output_path: Path,
+    micro_sfx_times: list[float] | None = None,
 ) -> bool:
     """Mix narration with optional intro ambience/music, using finite audio streams.
 
@@ -13031,13 +13801,40 @@ def add_audio_to_video(
         if not temp.exists() or temp.stat().st_size < 100_000:
             log.error("[Audio Mix] FFmpeg завершился, но временный MP4 отсутствует/слишком мал: %s", temp)
             return False
+        if not ENABLE_BACKGROUND_MUSIC and ENABLE_MICRO_SFX and micro_sfx_times:
+            sfx_temp = output_path.with_name(output_path.stem + ".micro_sfx_mix.tmp.mp4")
+            try:
+                sfx_temp.unlink(missing_ok=True)
+            except OSError as cleanup_exc:
+                log.warning("[SFX] Could not clear stale temporary output; skipping accents: %s", cleanup_exc)
+            if apply_micro_sfx_to_video(temp, sfx_temp, micro_sfx_times, video_duration):
+                sfx_temp.replace(temp)
+            else:
+                log.warning("[SFX] Transition accents were not applied; narration/video master remains unchanged.")
+        elif ENABLE_BACKGROUND_MUSIC:
+            log.info("[SFX] 0 micro-accents: background music is configured ON")
+        else:
+            log.info("[SFX] 0 micro-accents: disabled or no eligible fadeblack transitions")
         temp.replace(output_path)
         elapsed = time.monotonic() - started_at
         log.info("[Audio Mix] FFmpeg завершён за %.1f s; проверяю результат %s", elapsed, output_path.name)
         valid = is_valid_video(output_path)
-        if not valid:
-            log.error("[Audio Mix] Итоговый файл не прошёл проверку: %s", output_path)
-        return valid
+        final_duration = get_duration(output_path) if valid else None
+        av_delta = abs(float(final_duration) - float(video_duration)) if final_duration is not None else float("inf")
+        log.info(
+            "[SFX] Final audio/video master A/V Timing=%s | video_clock=%.3fs | muxed_clock=%s | delta=%.3fs",
+            "PASS" if valid and av_delta < 0.25 else "FAIL",
+            video_duration,
+            f"{final_duration:.3f}s" if final_duration is not None else "unknown",
+            av_delta,
+        )
+        if not valid or final_duration is None or av_delta >= 0.25:
+            log.error(
+                "[Audio Mix] Итоговый файл не прошёл проверку/тайминг: valid=%s duration=%s delta=%.3fs path=%s",
+                valid, final_duration, av_delta, output_path,
+            )
+            return False
+        return True
     except subprocess.TimeoutExpired:
         temp_size = 0
         try:
@@ -13134,6 +13931,8 @@ def add_subtitles_to_video(
     subtitle_file: Path,
     output_dir: Path,
     video_name: str,
+    chapter_cards: list[dict[str, Any]] | None = None,
+    visual_style_id: str = "realistic",
 ) -> Path | None:
     """Burn captions into the video. A silent copy is never treated as a subtitle success."""
     ensure_directory(output_dir)
@@ -13153,6 +13952,8 @@ def add_subtitles_to_video(
         pass
 
     staged_subtitle: Path | None = None
+    staged_chapters: Path | None = None
+    chapter_ass_path: Path | None = None
     failures: list[str] = []
     try:
         staged_subtitle = _stage_subtitle_file_for_ffmpeg(subtitle_file)
@@ -13166,20 +13967,36 @@ def add_subtitles_to_video(
             "BorderStyle=1,Outline=2,Shadow=1,Bold=0"
         )
         vf = f"subtitles=filename={subtitle_ref}:force_style='{style}'"
+        if chapter_cards:
+            chapter_ass_path = output_dir / f".{video_name}.chapter_cards.ass"
+            if _write_chapter_ass_file(chapter_ass_path, chapter_cards, visual_style_id):
+                staged_chapters = _stage_subtitle_file_for_ffmpeg(chapter_ass_path)
+                chapter_ref = _ffmpeg_filter_quote(str(staged_chapters.resolve()))
+                # Chapter ASS is a second libass layer: top-left placement keeps it clear
+                # of the standard lower-third narration subtitles.
+                vf += f",subtitles=filename={chapter_ref}"
+                log.info(
+                    "[Chapters] Rendering %s cards with preset=%s",
+                    len(chapter_cards), visual_style_id,
+                )
+            else:
+                raise RuntimeError("chapter ASS generation failed")
 
         strategies = [
             (
                 "GPU",
-                ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(video_path),
+                [FFMPEG_BIN, "-y", "-hide_banner", "-loglevel", "error", "-i", str(video_path),
                  "-map", "0:v:0", "-map", "0:a?", "-vf", vf,
                  "-c:v", HW_ENCODER, "-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", "8000k",
+                 "-pix_fmt", "yuv420p", "-profile:v", "high", "-r", str(FPS), "-video_track_timescale", "15360",
                  "-c:a", "copy", "-movflags", "+faststart", *FFMPEG_CLEAN_META_AV, str(temp_output)],
             ),
             (
                 "CPU",
-                ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(video_path),
+                [FFMPEG_BIN, "-y", "-hide_banner", "-loglevel", "error", "-i", str(video_path),
                  "-map", "0:v:0", "-map", "0:a?", "-vf", vf,
                  "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p",
+                 "-profile:v", "high", "-r", str(FPS), "-video_track_timescale", "15360",
                  "-c:a", "copy", "-movflags", "+faststart", *FFMPEG_CLEAN_META_AV, str(temp_output)],
             ),
         ]
@@ -13187,8 +14004,8 @@ def add_subtitles_to_video(
         for strategy_name, cmd in strategies:
             try:
                 result = subprocess.run(
-                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                    encoding="utf-8", errors="replace", timeout=1800,
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
+                    timeout=1800,
                 )
                 if result.returncode == 0 and is_valid_video(temp_output):
                     os.replace(temp_output, output)
@@ -13216,6 +14033,16 @@ def add_subtitles_to_video(
         if staged_subtitle is not None:
             try:
                 staged_subtitle.unlink(missing_ok=True)
+            except OSError:
+                pass
+        if staged_chapters is not None:
+            try:
+                staged_chapters.unlink(missing_ok=True)
+            except OSError:
+                pass
+        if chapter_ass_path is not None:
+            try:
+                chapter_ass_path.unlink(missing_ok=True)
             except OSError:
                 pass
         try:
@@ -13701,15 +14528,21 @@ def normalize_intro_clip_duration(path: Path, target_duration: float = FLOW_CLIP
     temp.unlink(missing_ok=True)
     speed_pts = random.uniform(0.985, 1.015)
     pad_seconds = max(0.0, target_duration - current * speed_pts + 0.25)
+    if pad_seconds > MAX_ALIGNMENT_PAD_SECONDS:
+        log.warning(
+            "[Intro Master] Refusing frozen-tail padding for %s: required=%.3fs limit=%.3fs.",
+            path.name, pad_seconds, MAX_ALIGNMENT_PAD_SECONDS,
+        )
+        return False
     angle = math.radians(random.choice((-1, 1)) * random.uniform(0.30, 0.45))
     crop = random.uniform(0.950, 0.962)
     contrast, brightness, saturation = random.uniform(*COLOR_CONTRAST_JITTER), random.uniform(*COLOR_BRIGHTNESS_JITTER), random.uniform(*COLOR_SATURATION_JITTER)
     grain = 1 if ACTIVE_VISUAL_STYLE_ID in {"comic_explainer", "cartoon_2d"} else random.randint(2, 3)
-    vf = f"setpts=PTS/{speed_pts:.6f},rotate={angle:.9f}:ow=iw:oh=ih:bilinear=1,crop=iw*{crop:.6f}:ih*{crop:.6f},scale=1920:1080:flags=lanczos,eq=contrast={contrast:.4f}:brightness={brightness:.4f}:saturation={saturation:.4f},noise=alls={grain}:allf=t+u,fps={FPS},tpad=stop_mode=clone:stop_duration={pad_seconds:.3f},setsar=1"
+    vf = f"setpts=PTS-STARTPTS,setpts=PTS/{speed_pts:.6f},rotate={angle:.9f}:ow=iw:oh=ih:bilinear=1,crop=iw*{crop:.6f}:ih*{crop:.6f},scale=1920:1080:flags=lanczos,eq=contrast={contrast:.4f}:brightness={brightness:.4f}:saturation={saturation:.4f},noise=alls={grain}:allf=t+u,fps={FPS},tpad=stop_mode=clone:stop_duration={pad_seconds:.3f},setsar=1"
     bitrate = f"{random.randint(*VIDEO_BITRATE_RANGE)}k"
     attempts = [
-        [FFMPEG_BIN, "-y", "-i", str(path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target_duration:.3f}", "-r", str(FPS), "-c:v", HW_ENCODER, "-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", bitrate, "-maxrate", "12000k", "-pix_fmt", "yuv420p", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
-        [FFMPEG_BIN, "-y", "-i", str(path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target_duration:.3f}", "-r", str(FPS), "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
+        [FFMPEG_BIN, "-y", "-i", str(path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target_duration:.3f}", "-r", str(FPS), "-c:v", HW_ENCODER, "-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", bitrate, "-maxrate", "12000k", "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
+        [FFMPEG_BIN, "-y", "-i", str(path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target_duration:.3f}", "-r", str(FPS), "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
     ]
     try:
         last_error = None
@@ -13742,7 +14575,18 @@ async def build_intro(
     narration_segments: list[dict[str, Any]] | None = None,
 ) -> float:
     intro = state.data["intro"]
-    INTRO_MASTER_VERSION = "intro-silent-fhd-film-master-v1"
+    narration_duration = max((float(x.get("end", 0) or 0) for x in (narration_segments or []) if isinstance(x, dict)), default=0.0)
+    if narration_duration <= 0.0:
+        narration_duration = float(state.data.get("timing", {}).get("audio_duration", 0.0) or 0.0)
+    saved_plan = intro.get("plan") if isinstance(intro.get("plan"), dict) else None
+    intro_plan = saved_plan if saved_plan and isinstance(saved_plan.get("clip_durations"), list) else plan_floating_intro(narration_segments or [], narration_duration)
+    intro["plan"] = intro_plan
+    intro["clip_durations"] = list(intro_plan["clip_durations"])
+    intro["intro_end_time"] = float(intro_plan["intro_end_time"])
+    intro_count = len(intro_plan["clip_durations"])
+    intro_durations = [float(x) for x in intro_plan["clip_durations"]]
+    INTRO_MASTER_VERSION = "intro-silent-fhd-floating-v2"
+    state.save()
     if intro.get("master_version") != INTRO_MASTER_VERSION:
         intro["master_version"] = INTRO_MASTER_VERSION
         intro["mastered_clips"] = []
@@ -13757,7 +14601,7 @@ async def build_intro(
     prompts = intro.get("prompts", [])
     storyboard_needs_refresh = (
         not isinstance(prompts, list)
-        or len(prompts) != INTRO_SHOT_COUNT
+        or len(prompts) != intro_count
         or intro.get("storyboard_version") != INTRO_STORYBOARD_VERSION
     )
     if storyboard_needs_refresh:
@@ -13770,7 +14614,7 @@ async def build_intro(
             or bool(old_output and old_output.exists())
             or any(
                 (state.media_dir / f"{kind}_{shot_index:02d}.mp4").is_file()
-                for shot_index in range(1, INTRO_SHOT_COUNT + 1)
+                for shot_index in range(1, intro_count + 1)
                 for kind in ("intro_raw", "intro_clip")
             )
             or any(
@@ -13782,7 +14626,7 @@ async def build_intro(
         )
         chars = state.data.get("analysis", {}).get("characters", {})
         ctx = state.data.get("analysis", {}).get("context", {})
-        timed_windows = build_intro_narration_windows(narration_segments)
+        timed_windows = build_intro_narration_windows(narration_segments, shot_count=intro_count, clip_durations=intro_durations)
         timed_opening_text = " ".join(
             str(item.get("text", "") or "").strip() for item in timed_windows
             if str(item.get("text", "") or "").strip()
@@ -13794,27 +14638,27 @@ async def build_intro(
             narration_words = str(text_content or "").split()
             if narration_words:
                 for window_index, window in enumerate(timed_windows):
-                    left = round(window_index * len(narration_words) / INTRO_SHOT_COUNT)
-                    right = round((window_index + 1) * len(narration_words) / INTRO_SHOT_COUNT)
+                    left = round(window_index * len(narration_words) / intro_count)
+                    right = round((window_index + 1) * len(narration_words) / intro_count)
                     window["text"] = " ".join(narration_words[left:right]).strip()
                 timed_opening_text = " ".join(
                     str(item.get("text", "") or "") for item in timed_windows
                 ).strip()
             log.warning(
                 "[Intro Alignment] Whisper timestamps unavailable; using ordered text chunks as a degraded fallback. "
-                "Exact 8-second phrase synchronization cannot be guaranteed in this fallback mode."
+                "Exact Whisper-word synchronization cannot be guaranteed in this fallback mode."
             )
         else:
             log.info(
-                "[Intro Alignment] Создаю 8 shot-промптов по реальным Whisper-таймкодам; "
-                "каждый клип привязан к своей 8-секундной фразе озвучки."
+                "[Intro Alignment] Создаю %s shot-промптов по реальным Whisper-таймкодам; "
+                "каждый клип привязан к своему сохранённому временному окну озвучки.", intro_count
             )
         new_prompts = generate_intro_storyboard_gemini(
             timed_opening_text, chars, ctx, target_lang=target_lang, timed_windows=timed_windows
         )
-        if len(new_prompts) != INTRO_SHOT_COUNT:
+        if len(new_prompts) != intro_count:
             raise FlowTechnicalError(
-                f"Раскадровка интро содержит {len(new_prompts)} кадров вместо {INTRO_SHOT_COUNT}"
+                f"Раскадровка интро содержит {len(new_prompts)} кадров вместо {intro_count}"
             )
 
         # A legacy short intro must not be mistaken for a completed eight-shot intro.
@@ -13823,7 +14667,7 @@ async def build_intro(
             legacy_backup_dir = ensure_directory(state.work_dir / "intro_legacy_backup")
             legacy_assets = [
                 state.media_dir / pattern
-                for shot_index in range(1, INTRO_SHOT_COUNT + 1)
+                for shot_index in range(1, intro_count + 1)
                 for pattern in (f"intro_raw_{shot_index:02d}.mp4", f"intro_clip_{shot_index:02d}.mp4")
             ]
             if old_output and old_output.exists():
@@ -13886,10 +14730,10 @@ async def build_intro(
             final_state["done"] = False
             final_state["subtitles_burned"] = False
 
-        intro["output"] = str(state.media_dir / "intro_64s.mp4")
+        intro["output"] = str(state.media_dir / "intro_floating.mp4")
         intro["prompts"] = new_prompts
         intro["storyboard_version"] = INTRO_STORYBOARD_VERSION
-        intro["target_duration"] = INTRO_TARGET_SECONDS
+        intro["target_duration"] = float(intro_plan["intro_end_time"])
         state.save()
 
     # Older checkpoints may contain prompts made before safety/audio constraints existed.
@@ -13906,7 +14750,7 @@ async def build_intro(
                 )
             )
     state.save()
-    log.info("[Intro Audio] Оставляю природную дорожку Flow примерно на 15%% исходной амплитуды; пики ограничиваются защитным потолком. Gain=%.3f; peak limiter=%.2f.", FLOW_INTRO_AUDIO_GAIN, FLOW_INTRO_AUDIO_PEAK_LIMIT)
+    log.info("[Intro Audio] Используются беззвучно мастеренные клипы; аудиодорожка Flow не включается.")
 
     clip_paths: list[Path] = []
     clip_durations: list[float] = []
@@ -13919,12 +14763,13 @@ async def build_intro(
     for idx, shot in enumerate(intro["prompts"], start=1):
         raw_path = state.media_dir / f"intro_raw_{idx:02d}.mp4"
         clip_path = state.media_dir / f"intro_clip_{idx:02d}.mp4"
-        shot_start = float(shot.get("narration_start", (idx - 1) * FLOW_CLIP_SECONDS) or 0.0)
-        shot_end = float(shot.get("narration_end", idx * FLOW_CLIP_SECONDS) or idx * FLOW_CLIP_SECONDS)
+        shot_target_duration = intro_durations[idx - 1]
+        shot_start = float(shot.get("narration_start", sum(intro_durations[:idx - 1])) or 0.0)
+        shot_end = float(shot.get("narration_end", shot_start + shot_target_duration) or shot_start + shot_target_duration)
         shot_excerpt = re.sub(r"\s+", " ", str(shot.get("narration_excerpt", "") or "").strip())
         log.info(
             "[Intro Alignment] Shot %s/%s -> %s-%s | narration=%s",
-            idx, INTRO_SHOT_COUNT, _format_intro_timecode(shot_start), _format_intro_timecode(shot_end),
+            idx, intro_count, _format_intro_timecode(shot_start), _format_intro_timecode(shot_end),
             shot_excerpt[:260] if shot_excerpt else "[no speech in this window]",
         )
 
@@ -13954,11 +14799,11 @@ async def build_intro(
                 if not any(str(path.resolve()).casefold() == hero_key for path in shot_references):
                     shot_references.insert(0, intro_hero_path)
             if intro_hero_path and cast_mode in {"PROTAGONIST", "BOTH"}:
-                log.info("[Intro Reference] Shot %s/%s CAST=%s; прикрепляю эталон главного героя %s.", idx, INTRO_SHOT_COUNT, cast_mode, intro_hero_path.name)
+                log.info("[Intro Reference] Shot %s/%s CAST=%s; прикрепляю эталон главного героя %s.", idx, intro_count, cast_mode, intro_hero_path.name)
             elif cast_mode == "NONE":
-                log.info("[Intro Reference] Shot %s/%s CAST=NONE; эталон героя не прикрепляется.", idx, INTRO_SHOT_COUNT)
+                log.info("[Intro Reference] Shot %s/%s CAST=NONE; эталон героя не прикрепляется.", idx, intro_count)
             else:
-                log.info("[Intro Reference] Shot %s/%s CAST=%s; secondary references=%s; герой-эталон не прикрепляется.", idx, INTRO_SHOT_COUNT, cast_mode, len(shot_references))
+                log.info("[Intro Reference] Shot %s/%s CAST=%s; secondary references=%s; герой-эталон не прикрепляется.", idx, intro_count, cast_mode, len(shot_references))
 
             generation_prompt = str(shot.get("prompt", "")).strip()
             hero_key = str(intro_hero_path.resolve()).casefold() if intro_hero_path else ""
@@ -14000,7 +14845,7 @@ async def build_intro(
             except Exception as exc:
                 log.error(
                     "❌ [Intro] Flow не создал клип %s/%s после повторов на профилях и упрощения Gemini: %s",
-                    idx, INTRO_SHOT_COUNT, str(exc)[:300],
+                    idx, intro_count, str(exc)[:300],
                 )
                 # Preserve semantic synchronization: if Flow cannot render this shot as
                 # video, request a still IMAGE from the exact same shot prompt and animate
@@ -14041,7 +14886,7 @@ async def build_intro(
                 )
                 if not fallback_ok or not is_valid_video(raw_path):
                     raise FlowTechnicalError(
-                        f"Не удалось создать семантически соответствующий клип интро {idx}/{INTRO_SHOT_COUNT}. "
+                        f"Не удалось создать семантически соответствующий клип интро {idx}/{intro_count}. "
                         "Не подставляю чужой кадр; checkpoint сохранён для повторного запуска."
                     ) from exc
                 shutil.copy2(raw_path, clip_path)
@@ -14065,7 +14910,7 @@ async def build_intro(
         # survive. The prompt forbids dialogue/music; final mix keeps this track quiet.
 
         if clip_path.name not in mastered_clips or not is_valid_video(clip_path):
-            if not normalize_intro_clip_duration(clip_path, FLOW_CLIP_SECONDS):
+            if not normalize_intro_clip_duration(clip_path, shot_target_duration):
                 raise FlowTechnicalError(
                     f"Intro {idx}: не удалось выровнять клип по окну озвучки {shot_start:.3f}-{shot_end:.3f}s"
                 )
@@ -14073,9 +14918,9 @@ async def build_intro(
             intro["mastered_clips"] = sorted(mastered_clips)
             state.save()
         duration = get_duration(clip_path)
-        if duration is None or duration <= 0.05 or abs(duration - FLOW_CLIP_SECONDS) > 0.10:
+        if duration is None or duration <= 0.05 or abs(duration - shot_target_duration) > 0.10:
             raise FlowTechnicalError(
-                f"Intro {idx}: длительность {duration!r}s не совпадает с окном {FLOW_CLIP_SECONDS:.1f}s"
+                f"Intro {idx}: длительность {duration!r}s не совпадает с окном {shot_target_duration:.3f}s"
             )
 
         if ENABLE_YOUTUBE_CONTENT_SAFETY_REVIEW:
@@ -14108,9 +14953,9 @@ async def build_intro(
         intro["actual_duration"] = sum(clip_durations)
         state.save()
 
-    if len(clip_paths) != INTRO_SHOT_COUNT:
+    if len(clip_paths) != intro_count:
         raise FlowTechnicalError(
-            f"Интро неполное: подготовлено {len(clip_paths)} из {INTRO_SHOT_COUNT} обязательных клипов."
+            f"Интро неполное: подготовлено {len(clip_paths)} из {intro_count} обязательных клипов."
         )
 
     temp = state.work_dir / "intro_concat_full.mp4"
@@ -14167,14 +15012,14 @@ async def build_intro(
         FLOW_INTRO_AUDIO_GAIN,
     )
     intro["actual_duration"] = get_duration(Path(intro["output"])) or actual
-    intro["target_duration"] = INTRO_TARGET_SECONDS
+    intro["target_duration"] = float(intro_plan["intro_end_time"])
     intro["done"] = is_valid_video(Path(intro["output"]))
     state.set_stage("intro_done" if intro["done"] else "intro")
     state.save()
 
     log.info(
-        "🎬 [Intro] Полная фактическая длительность: %.2fs; план: %s клипов примерно по %.1fs (около %.1fs); исходное аудио Flow подмешивается с gain=%.3f.",
-        intro["actual_duration"], INTRO_SHOT_COUNT, FLOW_CLIP_SECONDS, INTRO_TARGET_SECONDS, FLOW_INTRO_AUDIO_GAIN,
+        "🎬 [Intro] Полная фактическая длительность: %.2fs; план: %s клипов; беззвучный мастеринг и Whisper-синхронизация завершены.",
+        intro["actual_duration"], intro_count,
     )
     return intro["actual_duration"]
 
@@ -14358,7 +15203,7 @@ def archive_and_reset_for_language_change(state: ProjectState, new_lang: str) ->
     intro["clip_durations"] = []
     intro["actual_duration"] = 0.0
     intro["done"] = False
-    intro["output"] = str(state.media_dir / "intro_64s.mp4")
+    intro["output"] = str(state.media_dir / "intro_floating.mp4")
     state.data["main_clips"] = []
     state.data["scene_plan"] = []
     state.data["timing"] = {"intro_duration": 0.0, "audio_duration": 0.0, "main_timeline_start": 0.0, "timeline_signature": ""}
@@ -14551,7 +15396,7 @@ if ($applied) { exit 0 } else { exit 2 }
     try:
         result = subprocess.run(
             ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
-            capture_output=True, text=True, timeout=18,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=18,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         if result.returncode == 0:
@@ -14739,9 +15584,21 @@ def project_missing_required_intro_clips(folder: Path) -> bool:
         media_dir = folder / MEDIA_DIR_NAME
         # Check actual media-folder contents, not absolute clip paths in state.json:
         # finalization may have renamed the project directory with a _DONE suffix.
+        clip_durations = intro.get("clip_durations")
+        plan_obj = intro.get("plan") if isinstance(intro.get("plan"), dict) else {}
+        if isinstance(clip_durations, list) and clip_durations:
+            intro_count = len(clip_durations)
+        elif isinstance(plan_obj.get("clip_durations"), list) and plan_obj.get("clip_durations"):
+            intro_count = len(plan_obj["clip_durations"])
+        elif isinstance(plan_obj.get("clip_count"), int) and plan_obj["clip_count"] > 0:
+            intro_count = plan_obj["clip_count"]
+        elif isinstance(intro.get("clip_count"), int) and intro["clip_count"] > 0:
+            intro_count = intro["clip_count"]
+        else:
+            intro_count = INTRO_SHOT_COUNT
         missing_intro_clip = any(
             not is_valid_video(media_dir / f"intro_clip_{idx:02d}.mp4")
-            for idx in range(1, INTRO_SHOT_COUNT + 1)
+            for idx in range(1, intro_count + 1)
         )
         intro_output = Path(str(intro.get("output", "") or ""))
         missing_intro_output = bool(intro.get("done")) and (
@@ -14868,6 +15725,32 @@ def finalize_project_folder(folder: Path, final_path: Path) -> bool:
     """Delete source/work assets only after final video, story text, subtitles and thumbnails are verified."""
     if not folder.exists():
         return is_valid_video(final_path)
+    # Decode the delivered MP4 before deleting any project sources. A >=4s freeze
+    # anywhere in the final timeline is a failed QA gate, including an open-ended tail freeze.
+    try:
+        freeze_check = subprocess.run(
+            [FFMPEG_BIN, "-hide_banner", "-nostats", "-i", str(final_path),
+             "-vf", "freezedetect=n=0.003:d=4.0", "-an", "-f", "null", "-"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            encoding="utf-8", errors="replace",
+            timeout=max(300, int((get_duration(final_path) or 60.0) * 3)),
+        )
+        freeze_log = freeze_check.stderr or ""
+        freeze_durations = [
+            float(value) for value in re.findall(r"freeze_duration:\s*([0-9.]+)", freeze_log)
+        ]
+        if freeze_check.returncode != 0:
+            raise RuntimeError((freeze_log[-1200:] or "ffmpeg freezedetect returned non-zero"))
+        if any(value >= 4.0 for value in freeze_durations) or "freeze_start:" in freeze_log:
+            raise RuntimeError(
+                "freezedetect обнаружил статичный участок >=4.0s или незакрытый freeze на хвосте ролика: "
+                + ", ".join(f"{value:.3f}s" for value in freeze_durations[-8:])
+            )
+        log.info("[Project Cleanup] freezedetect QA PASS | file=%s | scanned=full video", final_path.name)
+    except Exception as exc:
+        log.error("[Project Cleanup] FREEZE QA FAILED; исходная папка сохранена: %s", exc)
+        return False
+
     if not final_delivery_outputs_ready(folder, final_path):
         log.error(
             "[Project Cleanup] Отказываюсь удалять исходную папку: финал, текст истории, встроенные субтитры или превью не прошли проверку. Папка сохранена: %s",
@@ -15559,6 +16442,8 @@ async def process_project(
             main_clips.append(record)
 
         scene_break_count = 0
+        last_fadeblack_scene = -999
+        last_fadeblack_time = -1e9
         for scene_idx, scene_record in enumerate(main_clips):
             if scene_idx + 1 >= len(main_clips):
                 scene_record["transition_out"] = "cut"
@@ -15571,14 +16456,81 @@ async def process_project(
                 continue
             scene_break_count += 1
             pause = float(next_scene.get("pause_before", 0.0) or 0.0)
-            if pause >= 0.8 or scene_break_count % 3 == 0:
+            next_start = float(next_scene.get("start", 0.0) or 0.0)
+            fadeblack_allowed = scene_idx - last_fadeblack_scene >= 4 and next_start - last_fadeblack_time >= 50.0
+            if pause >= 0.8 and fadeblack_allowed:
                 scene_record["transition_out"] = "fadeblack"
                 scene_record["transition_dur"] = round(random.uniform(0.45, 0.55), 3)
+                last_fadeblack_scene = scene_idx
+                last_fadeblack_time = next_start
             else:
                 scene_record["transition_out"] = "dissolve"
                 scene_record["transition_dur"] = round(random.uniform(0.35, 0.45), 3)
 
         state.data["main_clips"] = main_clips
+
+        chapter_plan = build_chapter_plan(main_clips, audio_duration, project_lang)
+        sfx_events = []
+        for scene_record in main_clips:
+            if str(scene_record.get("transition_out", "cut")).lower() == "fadeblack":
+                try:
+                    boundary = float(scene_record.get("end", 0.0) or 0.0)
+                    transition_duration = float(scene_record.get("transition_dur", 0.0) or 0.0)
+                    event_time = boundary - max(0.0, transition_duration) * 0.5
+                    if 15.0 < event_time < audio_duration - 15.0:
+                        sfx_events.append(round(event_time, 3))
+                except (TypeError, ValueError):
+                    continue
+        stage4_signature_payload = {
+            "timeline": timeline_signature,
+            "chapters": chapter_plan,
+            "visual_style": project_style,
+            "chapter_cards_enabled": bool(ENABLE_CHAPTER_TITLE_CARDS),
+            "sfx_events": sfx_events,
+            "sfx_enabled": bool(ENABLE_MICRO_SFX),
+            "sfx_gain": float(MICRO_SFX_GAIN),
+            "sfx_frequency": int(MICRO_SFX_FREQUENCY),
+            "sfx_duration": float(MICRO_SFX_DURATION),
+            "music_enabled": bool(ENABLE_BACKGROUND_MUSIC),
+        }
+        stage4_signature = hashlib.sha256(
+            json.dumps(stage4_signature_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        previous_stage4_signature = str(state.data.get("stage4_signature", "") or "")
+        if (
+            state.data.get("stage4_version") != STAGE4_VERSION
+            or previous_stage4_signature != stage4_signature
+        ):
+            previous_audio_value = str(state.data.get("montage", {}).get("with_audio", "") or "").strip()
+            previous_with_audio = Path(previous_audio_value) if previous_audio_value else state.work_dir / "video_with_audio.mp4"
+            if previous_with_audio.is_file():
+                try:
+                    previous_with_audio.unlink()
+                except OSError as stage4_exc:
+                    log.warning("[Stage4] Не удалось удалить устаревший аудиомастер; выберу отдельный Stage 4 output: %s", stage4_exc)
+                    previous_with_audio = state.work_dir / f"video_with_audio_stage4_{stage4_signature[:8]}.mp4"
+            state.data.setdefault("montage", {})["with_audio"] = str(previous_with_audio)
+            state.data.setdefault("final", {})["done"] = False
+            state.data.setdefault("final", {})["subtitles_burned"] = False
+            log.info("[Stage4] Версия/план изменились: инвалидирую только аудиомастер и финальный титрованный MP4.")
+        state.data["chapters"] = chapter_plan
+        state.data["chapter_plan_signature"] = stage4_signature
+        state.data["micro_sfx_events"] = sfx_events
+        state.data["stage4_version"] = STAGE4_VERSION
+        state.data["stage4_signature"] = stage4_signature
+        if chapter_plan:
+            log.info(
+                "[Chapters] %s cards planned | %s",
+                len(chapter_plan),
+                " | ".join(f'{item["start"]:.1f}s: {item["text"]}' for item in chapter_plan),
+            )
+        else:
+            log.info("[Chapters] 0 cards planned for this runtime/style")
+        log.info(
+            "[SFX] %s eligible fadeblack accents | enabled=%s | gain=%.4f | background music=%s",
+            len(sfx_events), ENABLE_MICRO_SFX, MICRO_SFX_GAIN,
+            "ON" if ENABLE_BACKGROUND_MUSIC else "OFF",
+        )
         state.save()
 
         if (
@@ -15644,6 +16596,14 @@ async def process_project(
                     scene_record["prompt"] = ""
             state.save()
 
+        if not state.data.get("video_inserts_assigned"):
+            for plan_idx, plan_record in enumerate(state.data["main_clips"]):
+                if not plan_record.get("plan") and plan_idx < len(state.data.get("scene_plan", [])):
+                    plan_record["plan"] = state.data["scene_plan"][plan_idx]
+            state.data["main_clips"] = assign_main_video_insert_slots(state.data["main_clips"], segments, intro_duration, audio_duration)
+            state.data["scene_plan"] = [str(x.get("plan", "")) for x in state.data["main_clips"]]
+            state.data["video_inserts_assigned"] = True
+            state.save()
         # 6. Flow Images -> Video Clips. Use adaptive 2.5D on every still image:
         # soft depth when visual cues suggest people/animals, full depth on landscapes.
         # Intro/Flow/Veo video files are never passed through this renderer.
@@ -15727,6 +16687,60 @@ async def process_project(
 
         for idx, record in enumerate(state.data["main_clips"]):
             output_path = Path(record["output_path"])
+            if record.get("media_type") == "video":
+                if is_valid_video(output_path):
+                    record["done"] = True
+                    record["video_insert_mastered"] = True
+                    state.save()
+                    continue
+                raw_video = state.media_dir / f"scene_{idx + 1:04d}_raw.mp4"
+                scene_plan_video = str(record.get("plan") or (state.data.get("scene_plan", [""])[idx] if idx < len(state.data.get("scene_plan", [])) else ""))
+                style_lead = visual_style_description("video")
+                video_prompt = (
+                    f"VISUAL MEDIUM FIRST: {style_lead}. "
+                    "Keep this exact visual style strictly from the first frame to the last. "
+                    "No talking head, no lip motion, no dialogue. "
+                    "Show physical movement, atmosphere, travel, nature/weather, or a location change matching ONLY this narration beat; "
+                    "no text, logo or watermark.\n\n"
+                    f"{visual_style_rules('video')}\n\n"
+                    "NARRATION BEAT:\n"
+                    + str(record.get("text", ""))
+                    + (f"\n\nSCENE DIRECTION:\n{scene_plan_video}" if scene_plan_video else "")
+                )
+                video_prompt = enforce_selected_visual_style(
+                    enforce_flow_intro_silent_visual_policy(
+                        enforce_flow_ambience_only_audio(
+                            apply_visible_text_language_rule(
+                                apply_youtube_content_safety_rules(video_prompt, "video"), project_lang
+                            )
+                        )
+                    ), "video"
+                )
+                try:
+                    video_cast_mode = _scene_cast_mode(scene_plan_video)
+                    video_references = references_for_scene(
+                        character_bible_for_refs, f"CAST={video_cast_mode}", video_prompt
+                    ) if video_cast_mode else []
+                    await generate_flow_with_failover(
+                        manager, playwright, "video", video_prompt, raw_video,
+                        reference_images=video_references,
+                    )
+                    target_duration = float(record["end"]) - float(record["start"])
+                    if not master_main_video_insert(raw_video, output_path, target_duration):
+                        raise FlowTechnicalError("Veo insert mastering failed")
+                    record["done"] = True
+                    record["video_insert_raw_path"] = str(raw_video)
+                    record["video_insert_mastered"] = True
+                    state.save()
+                    continue
+                except Exception as video_exc:
+                    log.warning("[Veo Inserts] Scene %s failed; falling back to still image: %s", idx + 1, video_exc)
+                    record["media_type"] = "image"
+                    record["done"] = False
+                    record["video_insert_fallback"] = str(video_exc)[:700]
+                    raw_video.unlink(missing_ok=True)
+                    output_path.unlink(missing_ok=True)
+                    state.save()
             image_path = Path(record["image_path"])
             scene_plan_for_effect = (
                 state.data.get("scene_plan", [])[idx]
@@ -16298,36 +17312,70 @@ async def process_project(
             })
 
         no_audio = Path(state.data["montage"]["no_audio"])
-        if not is_valid_video(no_audio):
+        montage_data = state.data.setdefault("montage", {})
+        audio_clock = get_duration(Path(str(state.data.get("audio", {}).get("path", ""))))
+        expected_montage_duration = float(audio_clock) if audio_clock is not None else float(audio_duration)
+        video_clock = get_duration(no_audio) if is_valid_video(no_audio) else None
+        cached_delta = abs(float(video_clock) - expected_montage_duration) if video_clock is not None else float("inf")
+        cache_is_trusted = bool(montage_data.get("done")) and video_clock is not None and cached_delta < 0.25
+
+        # A file on disk is not a completion checkpoint. If the checkpoint is false
+        # or its clock is wrong, discard both montage masters and rebuild from all_parts.
+        if not cache_is_trusted:
+            stale_with_audio = Path(str(montage_data.get("with_audio", "") or ""))
+            if stale_with_audio.is_file():
+                stale_with_audio.unlink(missing_ok=True)
+            montage_data["done"] = False
+            state.data.setdefault("final", {})["done"] = False
+            state.data.setdefault("final", {})["subtitles_burned"] = False
+            state.data.setdefault("final", {})["video"] = ""
+            state.save()
+        if no_audio.exists() and not cache_is_trusted:
+            log.warning(
+                "[A/V Timing] Rejecting cached video_no_audio.mp4 on Resume | montage.done=%s "
+                "video=%s audio=%.3fs delta=%.3fs; rebuilding from original all_parts",
+                bool(montage_data.get("done")),
+                f"{video_clock:.3f}s" if video_clock is not None else "invalid",
+                expected_montage_duration, cached_delta,
+            )
+            no_audio.unlink(missing_ok=True)
+        
+        if not cache_is_trusted:
             transition_start_index = (
                 1 if state.data["intro"]["done"] and Path(state.data["intro"]["output"]).exists()
                 else 0
             )
             if not concatenate_videos(
-                all_parts,
-                no_audio,
-                state.work_dir,
-                preserve_audio=False,
-                crossfade_duration=0.0,
-                transition_start_index=transition_start_index,
-                transitions=transition_specs,
+                all_parts, no_audio, state.work_dir, preserve_audio=False,
+                crossfade_duration=0.0, transition_start_index=transition_start_index,
+                transitions=transition_specs, expected_total=expected_montage_duration,
             ):
-                raise RuntimeError("Не удалось собрать видеомонтаж")
+                raise RuntimeError("Не удалось собрать видеомонтаж из исходных all_parts")
 
-            # Never shorten the visual montage to force it to audio_duration.
-            # The audio mixer below pads audio to the full visual runtime.
-            state.data["montage"]["done"] = True
-            state.save()
-
-        # Verify the completed silent montage against the exact mastered narration clock.
-        audio_clock = get_duration(Path(str(state.data.get("audio", {}).get("path", ""))))
-        video_clock = get_duration(no_audio)
-        if audio_clock is not None and video_clock is not None:
-            delta = abs(video_clock - audio_clock)
-            log.info("[A/V Timing] video_no_audio=%.3fs | audio.wav=%.3fs | delta=%.3fs (target < 0.250s)", video_clock, audio_clock, delta)
+            # Persist completion only after the actual rendered master passes the strict narration-clock gate.
+            video_clock = get_duration(no_audio)
+            if video_clock is None:
+                raise RuntimeError("A/V Timing: не удалось определить длительность пересобранного video_no_audio.mp4")
+            delta = abs(float(video_clock) - expected_montage_duration)
+            log.info(
+                "[A/V Timing] rebuilt video_no_audio=%.3fs | audio.wav=%.3fs | delta=%.3fs (target < 0.250s)",
+                video_clock, expected_montage_duration, delta,
+            )
             if delta >= 0.25:
-                log.error("[A/V Timing] Длительности видео и озвучки расходятся на %.3fs; останавливаю сборку, чтобы не выпустить ролик с дрейфом синхронизации.", delta)
-                raise RuntimeError(f"A/V duration mismatch: video_no_audio={video_clock:.3f}s, audio.wav={audio_clock:.3f}s, delta={delta:.3f}s (limit 0.250s)")
+                no_audio.unlink(missing_ok=True)
+                raise RuntimeError(
+                    f"A/V duration mismatch after full all_parts rebuild: "
+                    f"video={video_clock:.3f}s audio={expected_montage_duration:.3f}s delta={delta:.3f}s. "
+                    "Исходные сцены и интро сохранены; проект остановлен для диагностики."
+                )
+            montage_data["done"] = True
+            state.save()
+        else:
+            log.info(
+                "[Resume] Reusing verified video_no_audio.mp4 | video=%.3fs audio=%.3fs delta=%.3fs",
+                video_clock, expected_montage_duration, cached_delta,
+            )
+
         # 8. Audio Mix
         state.set_stage("audio_mix")
         with_audio = Path(state.data["montage"]["with_audio"])
@@ -16342,7 +17390,10 @@ async def process_project(
                 )
             else:
                 log.info("🎵 [Audio] Фоновая музыка отключена")
-            if not add_audio_to_video(no_audio, audio_path, music, with_audio):
+            if not add_audio_to_video(
+                no_audio, audio_path, music, with_audio,
+                micro_sfx_times=sfx_events,
+            ):
                 raise RuntimeError("Audio mix failed")
 
         log.info("[Pipeline] Audio mix stage completed; moving to title/preflight stage.")
@@ -16482,6 +17533,8 @@ async def process_project(
                 subtitle_path,
                 final_render_dir,
                 final_name,
+                chapter_cards=chapter_plan,
+                visual_style_id=project_style,
             )
             if rendered is None or not is_valid_video(final_path):
                 state.data["final"]["done"] = False
