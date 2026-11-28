@@ -12898,20 +12898,48 @@ def _write_ffconcat_listing(paths: list[Path], listing: Path) -> None:
             handle.write(_ffconcat_file_line(path))
 
 
-def _probe_concat_duration(listing: Path) -> float | None:
-    """Return the demuxed duration of an ffconcat input list."""
+def _parse_ffconcat_input_paths(listing: Path) -> list[Path]:
+    """Parse file directives written by _ffconcat_file_line, reversing its escaping."""
+    paths: list[Path] = []
     try:
-        result = subprocess.run(
-            [FFPROBE_BIN, "-v", "error", "-f", "concat", "-safe", "0", "-i", str(listing),
-             "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            encoding="utf-8", errors="replace", timeout=60, check=True,
-        )
-        value = float((result.stdout or "").strip().splitlines()[-1])
-        return value if math.isfinite(value) and value > 0 else None
+        lines = listing.read_text(encoding="utf-8-sig").splitlines()
     except Exception as exc:
-        log.warning("[A/V Timing] Could not probe ffconcat input duration (%s): %s", listing.name, exc)
+        log.warning("[A/V Timing] Could not read ffconcat listing %s: %s", listing.name, exc)
+        return paths
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line.startswith("file '") or not line.endswith("'"):
+            continue
+        value = line[6:-1]
+        # _ffconcat_file_line escapes apostrophes as '\\'' and backslashes as '\\\\'.
+        value = value.replace("'\\''", "'").replace("\\\\", "\\")
+        path = Path(value)
+        if not path.is_absolute():
+            path = listing.parent / path
+        paths.append(path)
+    return paths
+
+
+def _sum_ffconcat_input_durations(
+    listing: Path,
+    input_paths: list[Path] | None = None,
+) -> float | None:
+    """Sum actual media-file durations; concat-list format.duration is often N/A."""
+    paths = list(input_paths) if input_paths is not None else _parse_ffconcat_input_paths(listing)
+    if not paths:
         return None
+    total = 0.0
+    for path in paths:
+        duration = get_duration(path)
+        if duration is None or float(duration) <= 0.0 or not math.isfinite(float(duration)):
+            log.warning(
+                "[A/V Timing] Cannot determine positive duration for ffconcat input: %s",
+                path,
+            )
+            return None
+        total += float(duration)
+    return total if total > 0.0 and math.isfinite(total) else None
 
 
 def _video_stream_signature(path: Path) -> tuple[Any, ...] | None:
@@ -13013,12 +13041,12 @@ def _concat_normalized_parts(parts: list[Path], output_path: Path, temp_dir: Pat
         return False
     listing = temp_dir / f"{output_path.stem}_fallback_concat.txt"
     _write_ffconcat_listing(parts, listing)
-    total_duration = sum(get_duration(path) or 0.0 for path in parts)
-    if total_duration <= 0.0:
-        raise RuntimeError(f"[A/V Timing] Cannot determine cut-run duration: {output_path.name}")
+    total_duration = _sum_ffconcat_input_durations(listing, parts)
+    if total_duration is None:
+        raise RuntimeError(f"[A/V Timing] Cannot determine input duration; refusing duration padding: {output_path.name}")
     return _reencode_ffconcat_to_duration(
         listing, output_path, total_duration, preserve_audio=preserve_audio,
-        context=f"{output_path.name} normalized cut-run",
+        context=f"{output_path.name} normalized cut-run", input_paths=parts,
     )
 
 
@@ -13030,10 +13058,11 @@ def _reencode_ffconcat_to_duration(
     *,
     preserve_audio: bool = False,
     context: str = "concat",
+    input_paths: list[Path] | None = None,
 ) -> bool:
     """Re-encode to a deterministic CFR clock without hiding missing content in a long freeze."""
     target = max(0.1, float(expected_duration))
-    source_duration = _probe_concat_duration(listing)
+    source_duration = _sum_ffconcat_input_durations(listing, input_paths)
     if source_duration is None:
         raise RuntimeError(f"[A/V Timing] {context}: cannot determine input duration; refusing duration padding")
     missing = max(0.0, target - source_duration)
@@ -13263,6 +13292,7 @@ def concatenate_videos(
                 if not _reencode_ffconcat_to_duration(
                     fallback_listing, slide_output, slide_expected,
                     preserve_audio=preserve_audio, context=f"{output_path.name} mixed-xfade fallback",
+                    input_paths=[x[1] for x in slides],
                 ):
                     raise RuntimeError("fallback re-encode concat failed")
             created.append(slide_output)
@@ -13304,6 +13334,7 @@ def concatenate_videos(
             if not _reencode_ffconcat_to_duration(
                 listing, output_path, target_duration,
                 preserve_audio=preserve_audio, context=f"{output_path.name} final clock alignment",
+                input_paths=final_parts,
             ):
                 raise RuntimeError(f"A/V duration alignment failed: target={target_duration:.3f}s actual={actual_total:.3f}s")
             actual_total = get_duration(output_path)
