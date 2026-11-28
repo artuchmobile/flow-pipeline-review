@@ -4687,6 +4687,13 @@ def master_main_video_insert(raw_path, output_path, target_duration):
     target = float(target_duration)
     pts_factor = max(0.85, min(1.22, target / current))
     pad_seconds = max(0.0, target - current * pts_factor + 0.25)
+    if pad_seconds > MAX_ALIGNMENT_PAD_SECONDS:
+        log.warning(
+            "[Veo Inserts] Refusing frozen-tail padding for %s: required=%.3fs limit=%.3fs; "
+            "the scene will fall back to its still-image path.",
+            output_path.name, pad_seconds, MAX_ALIGNMENT_PAD_SECONDS,
+        )
+        return False
     angle = math.radians(random.choice((-1, 1)) * random.uniform(0.30, 0.45))
     crop = random.uniform(0.950, 0.962)
     contrast = random.uniform(*COLOR_CONTRAST_JITTER)
@@ -14519,6 +14526,12 @@ def normalize_intro_clip_duration(path: Path, target_duration: float = FLOW_CLIP
     temp.unlink(missing_ok=True)
     speed_pts = random.uniform(0.985, 1.015)
     pad_seconds = max(0.0, target_duration - current * speed_pts + 0.25)
+    if pad_seconds > MAX_ALIGNMENT_PAD_SECONDS:
+        log.warning(
+            "[Intro Master] Refusing frozen-tail padding for %s: required=%.3fs limit=%.3fs.",
+            path.name, pad_seconds, MAX_ALIGNMENT_PAD_SECONDS,
+        )
+        return False
     angle = math.radians(random.choice((-1, 1)) * random.uniform(0.30, 0.45))
     crop = random.uniform(0.950, 0.962)
     contrast, brightness, saturation = random.uniform(*COLOR_CONTRAST_JITTER), random.uniform(*COLOR_BRIGHTNESS_JITTER), random.uniform(*COLOR_SATURATION_JITTER)
