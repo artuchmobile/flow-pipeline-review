@@ -17244,6 +17244,21 @@ async def process_project(
                 ):
                     raise RuntimeError(f"A/V duration mismatch: video={video_clock:.3f}s audio={audio_clock:.3f}s delta={delta:.3f}s")
                 aligned_temp.replace(no_audio)
+                # The silent master changed clock; never reuse an audio/subtitle render
+                # that was muxed against the pre-alignment video.
+                stale_audio_value = str(state.data.get("montage", {}).get("with_audio", "") or "").strip()
+                if stale_audio_value:
+                    stale_audio_path = Path(stale_audio_value)
+                    if stale_audio_path.is_file():
+                        try:
+                            stale_audio_path.unlink(missing_ok=True)
+                        except OSError as cleanup_exc:
+                            log.warning("[A/V Timing] Could not invalidate stale with_audio master: %s", cleanup_exc)
+                state.data.setdefault("montage", {})["done"] = True
+                state.data.setdefault("final", {})["done"] = False
+                state.data.setdefault("final", {})["subtitles_burned"] = False
+                state.data.setdefault("final", {})["video"] = ""
+                state.save()
                 video_clock = get_duration(no_audio)
                 delta = abs(float(video_clock) - float(audio_clock)) if video_clock is not None else float("inf")
                 log.info("[A/V Timing] aligned video_no_audio=%s | audio.wav=%.3fs | delta=%.3fs",
