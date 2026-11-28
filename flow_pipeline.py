@@ -34,6 +34,7 @@ from playwright.async_api import async_playwright, TimeoutError as PlaywrightTim
 from adguard_rotator import rotate_adguard_windows_vpn
 PIPELINE_VERSION = "2026-11-27-UNIFIED-MASTERING-CLEAN-EXPORT-V75"
 FFMPEG_BIN = shutil.which("ffmpeg") or "ffmpeg"
+FFPROBE_BIN = shutil.which("ffprobe") or "ffprobe"
 
 # ============================================================================
 # CONFIG
@@ -299,6 +300,7 @@ ENABLE_FLOW_INTRO_DEFAULT = True
 # ------------------------------------------------------------
 
 FPS = 30
+MAX_ALIGNMENT_PAD_SECONDS = 1.5  # Never hide missing montage content with a long cloned tail.
 HW_ENCODER = "h264_nvenc"
 ENCODER_PRESET = "p5"
 
@@ -12731,41 +12733,12 @@ def normalize_clip(
     """
     duration_arg = ["-t", f"{target_duration:.3f}"] if target_duration is not None else []
 
-    if _is_native_fhd_h264(input_path, target_duration):
-        duration = target_duration if target_duration is not None else (get_duration(input_path) or 0.1)
-        if preserve_audio and not has_audio_stream(input_path):
-            fast_cmd = [
-                "ffmpeg", "-y", "-i", str(input_path),
-                "-f", "lavfi", "-t", f"{duration:.3f}", "-i",
-                "anullsrc=channel_layout=stereo:sample_rate=44100",
-                "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
-                "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
-                "-t", f"{duration:.3f}", str(output_path),
-            ]
-        elif preserve_audio:
-            fast_cmd = [
-                "ffmpeg", "-y", "-i", str(input_path),
-                "-map", "0:v:0", "-map", "0:a:0", "-c:v", "copy",
-                "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
-                "-af", "aresample=async=1:first_pts=0",
-                "-t", f"{duration:.3f}", str(output_path),
-            ]
-        else:
-            fast_cmd = [
-                "ffmpeg", "-y", "-i", str(input_path),
-                "-map", "0:v:0", "-c:v", "copy", "-an",
-                "-t", f"{duration:.3f}", str(output_path),
-            ]
-        try:
-            subprocess.run(fast_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return
-        except Exception as exc:
-            output_path.unlink(missing_ok=True)
-            log.warning("[Montage] Не удалось быстро скопировать совместимый FHD-поток; выполняю полную нормализацию: %s", exc)
+    # Always re-encode concat inputs: packet-copy can retain non-zero/irregular PTS
+    # and incompatible time bases at the intro/main seam.
 
     vf = (
         "scale=1920:1080:force_original_aspect_ratio=decrease,"
-        "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1"
+        "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,setpts=PTS-STARTPTS"
     )
 
     if preserve_audio:
@@ -12806,6 +12779,7 @@ def normalize_clip(
                 "-map", "1:a:0",
                 "-c:v", HW_ENCODER,
                 "-preset", ENCODER_PRESET,
+                "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360",
                 "-b:v", "8000k",
                 "-c:a", "aac",
                 "-ar", "44100",
@@ -12916,6 +12890,44 @@ def _write_ffconcat_listing(paths: list[Path], listing: Path) -> None:
             handle.write(_ffconcat_file_line(path))
 
 
+def _probe_concat_duration(listing: Path) -> float | None:
+    """Return the demuxed duration of an ffconcat input list."""
+    try:
+        result = subprocess.run(
+            [FFPROBE_BIN, "-v", "error", "-f", "concat", "-safe", "0", "-i", str(listing),
+             "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            encoding="utf-8", errors="replace", timeout=60, check=True,
+        )
+        value = float((result.stdout or "").strip().splitlines()[-1])
+        return value if math.isfinite(value) and value > 0 else None
+    except Exception as exc:
+        log.warning("[A/V Timing] Could not probe ffconcat input duration (%s): %s", listing.name, exc)
+        return None
+
+
+def _video_stream_signature(path: Path) -> tuple[Any, ...] | None:
+    """Read fields that must match before a safe MP4 stream-copy concat."""
+    try:
+        result = subprocess.run(
+            [FFPROBE_BIN, "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=codec_name,profile,pix_fmt,r_frame_rate,time_base,width,height,sample_aspect_ratio",
+             "-of", "json", str(path)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            encoding="utf-8", errors="replace", timeout=30, check=True,
+        )
+        streams = json.loads(result.stdout).get("streams", [])
+        if not streams:
+            return None
+        stream = streams[0]
+        keys = ("codec_name", "profile", "pix_fmt", "r_frame_rate", "time_base",
+                "width", "height", "sample_aspect_ratio")
+        return tuple(stream.get(key) for key in keys)
+    except Exception as exc:
+        log.warning("[Montage] ffprobe stream signature failed for %s: %s", path.name, exc)
+        return None
+
+
 def _run_concat_demuxer_with_fallback(
     listing: Path,
     temp_output: Path,
@@ -12924,16 +12936,17 @@ def _run_concat_demuxer_with_fallback(
     preserve_audio: bool,
     context: str,
     duration_hint: float | None = None,
+    allow_stream_copy: bool = True,
 ) -> bool:
-    """Try packet-copy first, then re-encode if streams aren't concat-compatible."""
+    """Try packet-copy only when the caller has verified compatible stream signatures."""
     timeout = max(300, int(duration_hint * 10)) if duration_hint else 900
     base = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
         "-f", "concat", "-safe", "0", "-i", str(listing),
     ]
-    strategies: list[tuple[str, list[str]]] = [
-        ("stream-copy", ["-c", "copy", *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO)]),
-    ]
+    strategies: list[tuple[str, list[str]]] = []
+    if allow_stream_copy:
+        strategies.append(("stream-copy", ["-c", "copy", *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO)]))
     audio_args = (
         ["-map", "0:a:0?", "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2"]
         if preserve_audio
@@ -13007,11 +13020,21 @@ def _reencode_ffconcat_to_duration(
     preserve_audio: bool = False,
     context: str = "concat",
 ) -> bool:
-    """Re-encode an ffconcat list to a deterministic CFR clock, padding/trimming to target."""
+    """Re-encode to a deterministic CFR clock without hiding missing content in a long freeze."""
     target = max(0.1, float(expected_duration))
+    source_duration = _probe_concat_duration(listing)
+    if source_duration is None:
+        raise RuntimeError(f"[A/V Timing] {context}: cannot determine input duration; refusing duration padding")
+    missing = max(0.0, target - source_duration)
+    if missing > MAX_ALIGNMENT_PAD_SECONDS:
+        raise RuntimeError(
+            f"[A/V Timing] {context}: source is short by {missing:.3f}s "
+            f"(limit {MAX_ALIGNMENT_PAD_SECONDS:.3f}s); rebuild from original all_parts required"
+        )
+    pad_duration = min(MAX_ALIGNMENT_PAD_SECONDS, missing)
     temp_output = output_path.with_name(output_path.stem + ".exact-temp.mp4")
     video_filter = (
-        f"tpad=stop_mode=clone:stop_duration={target:.6f},"
+        f"tpad=stop_mode=clone:stop_duration={pad_duration:.6f},"
         f"fps={FPS},trim=duration={target:.6f},setpts=PTS-STARTPTS,setsar=1"
     )
     audio_args = (
@@ -13024,46 +13047,51 @@ def _reencode_ffconcat_to_duration(
         ("libx264", ["-preset", "fast", "-crf", "18"]),
     ]
     failures: list[str] = []
-    for encoder, encoder_args in encoders:
-        try:
+    try:
+        for encoder, encoder_args in encoders:
+            try:
+                temp_output.unlink(missing_ok=True)
+                cmd = [
+                    FFMPEG_BIN, "-hide_banner", "-loglevel", "error", "-y",
+                    "-fflags", "+genpts", "-f", "concat", "-safe", "0", "-i", str(listing),
+                    "-map", "0:v:0", *audio_args, "-vf", video_filter,
+                    "-c:v", encoder, *encoder_args, "-pix_fmt", "yuv420p", "-profile:v", "high",
+                    "-r", str(FPS), "-video_track_timescale", "15360",
+                    "-t", f"{target:.6f}", "-movflags", "+faststart",
+                    *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO),
+                    str(temp_output),
+                ]
+                completed = subprocess.run(
+                    cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                    timeout=max(300, int(target * 10)),
+                )
+                actual = get_duration(temp_output)
+                delta = abs(float(actual) - target) if actual is not None else float("inf")
+                if is_valid_video(temp_output) and actual is not None and delta < 0.25:
+                    temp_output.replace(output_path)
+                    log.info(
+                        "[A/V Timing] %s exact re-encode PASS | input=%.3fs target=%.3fs actual=%.3fs "
+                        "delta=%.3fs pad=%.3fs encoder=%s",
+                        context, source_duration, target, actual, delta, pad_duration, encoder,
+                    )
+                    return True
+                stderr_text = completed.stderr.decode("utf-8", errors="replace") if isinstance(completed.stderr, bytes) else str(completed.stderr or "")
+                failures.append(f"{encoder}: invalid output or duration delta={delta:.3f}s {stderr_text[-700:]}")
+            except Exception as exc:
+                detail = getattr(exc, "stderr", b"")
+                if isinstance(detail, bytes):
+                    detail = detail.decode("utf-8", errors="replace")
+                elif not isinstance(detail, str):
+                    detail = str(detail)
+                failures.append(f"{encoder}: {(detail or str(exc))[-1000:]}")
+        raise RuntimeError(
+            f"[A/V Timing] {context}: exact re-encode failed; target={target:.3f}s "
+            f"input={source_duration:.3f}s pad_limit={MAX_ALIGNMENT_PAD_SECONDS:.3f}s; "
+            + " | ".join(failures)
+        )
+    finally:
+        if temp_output.exists():
             temp_output.unlink(missing_ok=True)
-            cmd = [
-                FFMPEG_BIN, "-hide_banner", "-loglevel", "error", "-y",
-                "-fflags", "+genpts", "-f", "concat", "-safe", "0", "-i", str(listing),
-                "-map", "0:v:0", *audio_args,
-                "-vf", video_filter,
-                "-c:v", encoder, *encoder_args,
-                "-pix_fmt", "yuv420p", "-profile:v", "high",
-                "-r", str(FPS), "-video_track_timescale", "15360",
-                "-t", f"{target:.6f}", "-movflags", "+faststart",
-                *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO),
-                str(temp_output),
-            ]
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                           timeout=max(300, int(target * 10)))
-            actual = get_duration(temp_output)
-            delta = abs(float(actual) - target) if actual is not None else float("inf")
-            if is_valid_video(temp_output) and actual is not None and delta < 0.25:
-                temp_output.replace(output_path)
-                log.info("[A/V Timing] %s exact re-encode PASS | target=%.3fs actual=%.3fs delta=%.3fs encoder=%s",
-                         context, target, actual, delta, encoder)
-                return True
-            failures.append(f"{encoder}: invalid output or duration delta={delta:.3f}s")
-        except Exception as exc:
-            detail = getattr(exc, "stderr", b"")
-            if isinstance(detail, bytes):
-                detail = detail.decode("utf-8", errors="replace")
-            elif not isinstance(detail, str):
-                detail = str(detail)
-            failures.append(f"{encoder}: {(detail or str(exc))[-1000:]}")
-        finally:
-            if not is_valid_video(temp_output):
-                try:
-                    temp_output.unlink(missing_ok=True)
-                except OSError:
-                    pass
-    log.error("[A/V Timing] %s exact re-encode failed: %s", context, " | ".join(failures))
-    return False
 
 
 def _render_crossfade_group(
@@ -13239,9 +13267,17 @@ def concatenate_videos(
         packet_duration = sum(get_duration(p) or 0.0 for p in final_parts)
         timeline_duration = sum(float(x[2]) for x in normalized)
         target_duration = max(0.1, float(expected_total)) if expected_total is not None else timeline_duration
+        signatures = [_video_stream_signature(part) for part in final_parts]
+        signatures_match = bool(signatures) and all(sig is not None and sig == signatures[0] for sig in signatures)
+        if not signatures_match:
+            log.warning(
+                "[Montage] prefix/slide stream mismatch; disabling stream-copy and forcing CFR re-encode | inputs=%s",
+                [part.name for part in final_parts],
+            )
         if not _run_concat_demuxer_with_fallback(
             listing, temp, output_path, preserve_audio=preserve_audio,
             context=output_path.name, duration_hint=target_duration or packet_duration or None,
+            allow_stream_copy=signatures_match,
         ):
             raise RuntimeError(f"Не удалось собрать {output_path.name}")
         actual_total = get_duration(output_path)
@@ -14457,7 +14493,7 @@ def normalize_intro_clip_duration(path: Path, target_duration: float = FLOW_CLIP
     crop = random.uniform(0.950, 0.962)
     contrast, brightness, saturation = random.uniform(*COLOR_CONTRAST_JITTER), random.uniform(*COLOR_BRIGHTNESS_JITTER), random.uniform(*COLOR_SATURATION_JITTER)
     grain = 1 if ACTIVE_VISUAL_STYLE_ID in {"comic_explainer", "cartoon_2d"} else random.randint(2, 3)
-    vf = f"setpts=PTS/{speed_pts:.6f},rotate={angle:.9f}:ow=iw:oh=ih:bilinear=1,crop=iw*{crop:.6f}:ih*{crop:.6f},scale=1920:1080:flags=lanczos,eq=contrast={contrast:.4f}:brightness={brightness:.4f}:saturation={saturation:.4f},noise=alls={grain}:allf=t+u,fps={FPS},tpad=stop_mode=clone:stop_duration={pad_seconds:.3f},setsar=1"
+    vf = f"setpts=PTS-STARTPTS,setpts=PTS/{speed_pts:.6f},rotate={angle:.9f}:ow=iw:oh=ih:bilinear=1,crop=iw*{crop:.6f}:ih*{crop:.6f},scale=1920:1080:flags=lanczos,eq=contrast={contrast:.4f}:brightness={brightness:.4f}:saturation={saturation:.4f},noise=alls={grain}:allf=t+u,fps={FPS},tpad=stop_mode=clone:stop_duration={pad_seconds:.3f},setsar=1"
     bitrate = f"{random.randint(*VIDEO_BITRATE_RANGE)}k"
     attempts = [
         [FFMPEG_BIN, "-y", "-i", str(path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target_duration:.3f}", "-r", str(FPS), "-c:v", HW_ENCODER, "-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", bitrate, "-maxrate", "12000k", "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
