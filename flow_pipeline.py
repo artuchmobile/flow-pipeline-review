@@ -13466,7 +13466,7 @@ def apply_micro_sfx_to_video(
         return False
     envelope = "+".join(pulses)
     filter_complex = (
-        f"[1:a]volume='{gain:.5f}*({envelope})',lowpass=f=170,"
+        f"[1:a]volume='{gain:.5f}*({envelope})':eval=frame,lowpass=f=170,"
         "alimiter=limit=0.12:level=false[sfx];"
         "[0:a][sfx]amix=inputs=2:duration=first:normalize=0:dropout_transition=0,"
         "alimiter=limit=0.95:level=false[a]"
