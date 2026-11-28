@@ -16264,9 +16264,13 @@ async def process_project(
         stage4_signature_payload = {
             "timeline": timeline_signature,
             "chapters": chapter_plan,
+            "visual_style": project_style,
+            "chapter_cards_enabled": bool(ENABLE_CHAPTER_TITLE_CARDS),
             "sfx_events": sfx_events,
             "sfx_enabled": bool(ENABLE_MICRO_SFX),
             "sfx_gain": float(MICRO_SFX_GAIN),
+            "sfx_frequency": int(MICRO_SFX_FREQUENCY),
+            "sfx_duration": float(MICRO_SFX_DURATION),
             "music_enabled": bool(ENABLE_BACKGROUND_MUSIC),
         }
         stage4_signature = hashlib.sha256(
@@ -16277,13 +16281,15 @@ async def process_project(
             state.data.get("stage4_version") != STAGE4_VERSION
             or previous_stage4_signature != stage4_signature
         ):
-            previous_with_audio = Path(str(state.data.get("montage", {}).get("with_audio", "") or ""))
+            previous_audio_value = str(state.data.get("montage", {}).get("with_audio", "") or "").strip()
+            previous_with_audio = Path(previous_audio_value) if previous_audio_value else state.work_dir / "video_with_audio.mp4"
             if previous_with_audio.is_file():
                 try:
                     previous_with_audio.unlink()
                 except OSError as stage4_exc:
-                    log.warning("[Stage4] Не удалось удалить устаревший аудиомастер: %s", stage4_exc)
-            state.data.setdefault("montage", {})["with_audio"] = str(state.media_dir / "montage_with_audio.mp4")
+                    log.warning("[Stage4] Не удалось удалить устаревший аудиомастер; выберу отдельный Stage 4 output: %s", stage4_exc)
+                    previous_with_audio = state.work_dir / f"video_with_audio_stage4_{stage4_signature[:8]}.mp4"
+            state.data.setdefault("montage", {})["with_audio"] = str(previous_with_audio)
             state.data.setdefault("final", {})["done"] = False
             state.data.setdefault("final", {})["subtitles_burned"] = False
             log.info("[Stage4] Версия/план изменились: инвалидирую только аудиомастер и финальный титрованный MP4.")
