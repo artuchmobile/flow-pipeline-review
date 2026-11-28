@@ -13406,6 +13406,26 @@ def _chapter_title_for_language(index: int, language: str) -> str:
     return options[min(max(0, int(index)), len(options) - 1)]
 
 
+def _contextual_chapter_title(scene: dict[str, Any], index: int, language: str,
+                              at: float, duration: float) -> str:
+    """Prefer a concise scene-derived heading; use position-aware act labels as fallback."""
+    explicit = str(scene.get("chapter_title", "") or "").strip()
+    source = explicit or str(scene.get("text", "") or "").strip()
+    if source:
+        source = re.sub(r"\s+", " ", source)
+        source = re.sub(r"^[\s\-–—•\d.]+", "", source)
+        clause = re.split(r"(?<=[.!?])\s+|[;:]", source, maxsplit=1)[0].strip(" .,:;—-")
+        words = clause.split()
+        if len(words) >= 3:
+            candidate = " ".join(words[:8]).strip(" ,;:.")
+            if len(candidate) > 54:
+                candidate = candidate[:51].rsplit(" ", 1)[0].rstrip(" ,;:.") + "…"
+            return candidate[:56]
+    # A mid-story card must not be labelled "Beginning".
+    position = min(5, max(1, int((max(0.0, at) / max(1.0, duration)) * 6)))
+    return _chapter_title_for_language(position, language)
+
+
 def build_chapter_plan(
     main_clips: list[dict[str, Any]],
     audio_duration: float,
@@ -13501,7 +13521,10 @@ def build_chapter_plan(
             "index": index + 1,
             "start": at,
             "end": round(min(duration - 1.0, at + 4.2), 3),
-            "text": _chapter_title_for_language(index, narration_language),
+            "text": _contextual_chapter_title(
+                main_clips[int(item["scene_index"])] if int(item["scene_index"]) < len(main_clips) and isinstance(main_clips[int(item["scene_index"])], dict) else {},
+                index, narration_language, at, duration,
+            ),
             "scene_index": int(item["scene_index"]),
             "source": "scene_break" if int(item["priority"]) == 0 else (
                 "time_or_location_cue" if int(item["priority"]) == 1 else (
@@ -15680,6 +15703,32 @@ def finalize_project_folder(folder: Path, final_path: Path) -> bool:
     """Delete source/work assets only after final video, story text, subtitles and thumbnails are verified."""
     if not folder.exists():
         return is_valid_video(final_path)
+    # Decode the delivered MP4 before deleting any project sources. A >=4s freeze
+    # anywhere in the final timeline is a failed QA gate, including an open-ended tail freeze.
+    try:
+        freeze_check = subprocess.run(
+            [FFMPEG_BIN, "-hide_banner", "-nostats", "-i", str(final_path),
+             "-vf", "freezedetect=n=0.003:d=4.0", "-an", "-f", "null", "-"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            encoding="utf-8", errors="replace",
+            timeout=max(300, int((get_duration(final_path) or 60.0) * 3)),
+        )
+        freeze_log = freeze_check.stderr or ""
+        freeze_durations = [
+            float(value) for value in re.findall(r"freeze_duration:\s*([0-9.]+)", freeze_log)
+        ]
+        if freeze_check.returncode != 0:
+            raise RuntimeError((freeze_log[-1200:] or "ffmpeg freezedetect returned non-zero"))
+        if any(value >= 4.0 for value in freeze_durations) or "freeze_start:" in freeze_log:
+            raise RuntimeError(
+                "freezedetect обнаружил статичный участок >=4.0s или незакрытый freeze на хвосте ролика: "
+                + ", ".join(f"{value:.3f}s" for value in freeze_durations[-8:])
+            )
+        log.info("[Project Cleanup] freezedetect QA PASS | file=%s | scanned=full video", final_path.name)
+    except Exception as exc:
+        log.error("[Project Cleanup] FREEZE QA FAILED; исходная папка сохранена: %s", exc)
+        return False
+
     if not final_delivery_outputs_ready(folder, final_path):
         log.error(
             "[Project Cleanup] Отказываюсь удалять исходную папку: финал, текст истории, встроенные субтитры или превью не прошли проверку. Папка сохранена: %s",
@@ -17241,68 +17290,69 @@ async def process_project(
             })
 
         no_audio = Path(state.data["montage"]["no_audio"])
+        montage_data = state.data.setdefault("montage", {})
         audio_clock = get_duration(Path(str(state.data.get("audio", {}).get("path", ""))))
         expected_montage_duration = float(audio_clock) if audio_clock is not None else float(audio_duration)
-        if not is_valid_video(no_audio):
+        video_clock = get_duration(no_audio) if is_valid_video(no_audio) else None
+        cached_delta = abs(float(video_clock) - expected_montage_duration) if video_clock is not None else float("inf")
+        cache_is_trusted = bool(montage_data.get("done")) and video_clock is not None and cached_delta < 0.25
+
+        # A file on disk is not a completion checkpoint. If the checkpoint is false
+        # or its clock is wrong, discard both montage masters and rebuild from all_parts.
+        if no_audio.exists() and not cache_is_trusted:
+            log.warning(
+                "[A/V Timing] Rejecting cached video_no_audio.mp4 on Resume | montage.done=%s "
+                "video=%s audio=%.3fs delta=%.3fs; rebuilding from original all_parts",
+                bool(montage_data.get("done")),
+                f"{video_clock:.3f}s" if video_clock is not None else "invalid",
+                expected_montage_duration, cached_delta,
+            )
+            no_audio.unlink(missing_ok=True)
+            stale_with_audio = Path(str(montage_data.get("with_audio", "") or ""))
+            if stale_with_audio.is_file():
+                stale_with_audio.unlink(missing_ok=True)
+            montage_data["done"] = False
+            state.data.setdefault("final", {})["done"] = False
+            state.data.setdefault("final", {})["subtitles_burned"] = False
+            state.data.setdefault("final", {})["video"] = ""
+            state.save()
+
+        if not cache_is_trusted:
             transition_start_index = (
                 1 if state.data["intro"]["done"] and Path(state.data["intro"]["output"]).exists()
                 else 0
             )
             if not concatenate_videos(
-                all_parts,
-                no_audio,
-                state.work_dir,
-                preserve_audio=False,
-                crossfade_duration=0.0,
-                transition_start_index=transition_start_index,
-                transitions=transition_specs,
-                expected_total=expected_montage_duration,
+                all_parts, no_audio, state.work_dir, preserve_audio=False,
+                crossfade_duration=0.0, transition_start_index=transition_start_index,
+                transitions=transition_specs, expected_total=expected_montage_duration,
             ):
-                raise RuntimeError("Не удалось собрать видеомонтаж")
+                raise RuntimeError("Не удалось собрать видеомонтаж из исходных all_parts")
 
-            # Never shorten the visual montage to force it to audio_duration.
-            # The audio mixer below pads audio to the full visual runtime.
-            state.data["montage"]["done"] = True
-            state.save()
-
-        # Verify the completed silent montage against the exact mastered narration clock.
-        audio_clock = get_duration(Path(str(state.data.get("audio", {}).get("path", "")))) or expected_montage_duration
-        video_clock = get_duration(no_audio)
-        if audio_clock is not None and video_clock is not None:
-            delta = abs(video_clock - audio_clock)
-            log.info("[A/V Timing] video_no_audio=%.3fs | audio.wav=%.3fs | delta=%.3fs (target < 0.250s)", video_clock, audio_clock, delta)
+            # Persist completion only after the actual rendered master passes the strict narration-clock gate.
+            video_clock = get_duration(no_audio)
+            if video_clock is None:
+                raise RuntimeError("A/V Timing: не удалось определить длительность пересобранного video_no_audio.mp4")
+            delta = abs(float(video_clock) - expected_montage_duration)
+            log.info(
+                "[A/V Timing] rebuilt video_no_audio=%.3fs | audio.wav=%.3fs | delta=%.3fs (target < 0.250s)",
+                video_clock, expected_montage_duration, delta,
+            )
             if delta >= 0.25:
-                log.error("[A/V Timing] Video/audio delta %.3fs; trying exact narration-clock alignment.", delta)
-                alignment_listing = state.work_dir / "video_no_audio_alignment_inputs.txt"
-                _write_ffconcat_listing([no_audio], alignment_listing)
-                aligned_temp = no_audio.with_name(no_audio.stem + ".aligned.tmp.mp4")
-                if not _reencode_ffconcat_to_duration(
-                    alignment_listing, aligned_temp, float(audio_clock),
-                    preserve_audio=False, context="video_no_audio narration-clock alignment",
-                ):
-                    raise RuntimeError(f"A/V duration mismatch: video={video_clock:.3f}s audio={audio_clock:.3f}s delta={delta:.3f}s")
-                aligned_temp.replace(no_audio)
-                # The silent master changed clock; never reuse an audio/subtitle render
-                # that was muxed against the pre-alignment video.
-                stale_audio_value = str(state.data.get("montage", {}).get("with_audio", "") or "").strip()
-                if stale_audio_value:
-                    stale_audio_path = Path(stale_audio_value)
-                    if stale_audio_path.is_file():
-                        try:
-                            stale_audio_path.unlink(missing_ok=True)
-                        except OSError as cleanup_exc:
-                            log.warning("[A/V Timing] Could not invalidate stale with_audio master: %s", cleanup_exc)
-                state.data.setdefault("montage", {})["done"] = True
-                state.data.setdefault("final", {})["done"] = False
-                state.data.setdefault("final", {})["subtitles_burned"] = False
-                state.data.setdefault("final", {})["video"] = ""
-                state.save()
-                video_clock = get_duration(no_audio)
-                delta = abs(float(video_clock) - float(audio_clock)) if video_clock is not None else float("inf")
-                log.info("[A/V Timing] aligned video_no_audio=%s | audio.wav=%.3fs | delta=%.3fs",
-                         f"{video_clock:.3f}s" if video_clock is not None else "unknown", audio_clock, delta)
-                if video_clock is None or delta >= 0.25:
-                    raise RuntimeError(f"A/V duration mismatch after alignment: video={video_clock} audio={audio_clock:.3f}s delta={delta:.3f}s")
+                no_audio.unlink(missing_ok=True)
+                raise RuntimeError(
+                    f"A/V duration mismatch after full all_parts rebuild: "
+                    f"video={video_clock:.3f}s audio={expected_montage_duration:.3f}s delta={delta:.3f}s. "
+                    "Исходные сцены и интро сохранены; проект остановлен для диагностики."
+                )
+            montage_data["done"] = True
+            state.save()
+        else:
+            log.info(
+                "[Resume] Reusing verified video_no_audio.mp4 | video=%.3fs audio=%.3fs delta=%.3fs",
+                video_clock, expected_montage_duration, cached_delta,
+            )
+
         # 8. Audio Mix
         state.set_stage("audio_mix")
         with_audio = Path(state.data["montage"]["with_audio"])
