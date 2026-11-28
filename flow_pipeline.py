@@ -13214,11 +13214,13 @@ def concatenate_videos(
                                            slide_output, temp_dir, preserve_audio, run_transitions):
                 # Do not packet-copy the mixed-transition fallback: packet boundaries can
                 # drop a terminal frame or shorten a cut-run. Re-encode to the scheduled clock.
-                slide_expected = sum(float(x[1]) for x in runs)
-                log.warning("[Transitions] Mixed xfade fallback: deterministic hard-cut re-encode | segments=%s target=%.3fs",
-                            len(runs), slide_expected)
+                slide_expected = sum(float(x[2]) for x in slides)
+                log.warning("[Transitions] Mixed xfade fallback: deterministic hard-cut re-encode | scenes=%s target=%.3fs",
+                            len(slides), slide_expected)
+                # Rebuild from every normalized source scene, not the intermediate
+                # stream-copied cut-runs that were prepared only as xfade inputs.
                 fallback_listing = temp_dir / f"{output_path.stem}_mixed_fallback_inputs.txt"
-                _write_ffconcat_listing([x[0] for x in runs], fallback_listing)
+                _write_ffconcat_listing([x[1] for x in slides], fallback_listing)
                 if not _reencode_ffconcat_to_duration(
                     fallback_listing, slide_output, slide_expected,
                     preserve_audio=preserve_audio, context=f"{output_path.name} mixed-xfade fallback",
