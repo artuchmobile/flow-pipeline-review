@@ -13366,7 +13366,6 @@ def _reencode_ffconcat_to_duration(
 
     ensure_directory(output_path.parent)
     temp_output = output_path.with_name(output_path.stem + ".exact-temp.mp4")
-    temp_encode = temp_output.with_name(temp_output.stem + ".encode-temp.mp4")
     encoders = [
         (HW_ENCODER, ["-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", "8000k", "-maxrate", "10000k"]),
         ("libx264", ["-preset", "fast", "-crf", "18"]),
@@ -13411,6 +13410,7 @@ def _reencode_ffconcat_to_duration(
                     filter_parts.append(
                         f"[{input_index}:a:0]aresample=44100,"
                         f"aformat=sample_fmts=fltp:channel_layouts=stereo,"
+                        f"apad,atrim=duration={batch_durations[input_index]:.6f},"
                         f"asetpts=PTS-STARTPTS[{audio_label}]"
                     )
                 else:
@@ -13423,17 +13423,11 @@ def _reencode_ffconcat_to_duration(
                 concat_inputs.append(f"[{video_label}]")
 
         concat_audio_flag = 1 if preserve_audio else 0
+        concat_output_labels = "[vcat][acat]" if preserve_audio else "[vcat]"
         filter_parts.append(
             "".join(concat_inputs)
-            + f"concat=n={len(batch_paths)}:v=1:a={concat_audio_flag}[vcat]"
-            + ("[acat]" if False else "")
+            + f"concat=n={len(batch_paths)}:v=1:a={concat_audio_flag}{concat_output_labels}"
         )
-        # The concat filter emits video first and audio second when a=1.
-        if preserve_audio:
-            filter_parts[-1] = (
-                "".join(concat_inputs)
-                + f"concat=n={len(batch_paths)}:v=1:a=1[vcat][acat]"
-            )
         filter_parts.append(
             f"[vcat]tpad=stop_mode=clone:stop_duration={batch_pad:.6f},"
             f"fps={FPS},trim=duration={batch_target:.6f},setpts=PTS-STARTPTS,"
@@ -13573,8 +13567,6 @@ def _reencode_ffconcat_to_duration(
     finally:
         if temp_output.exists():
             temp_output.unlink(missing_ok=True)
-        if temp_encode.exists():
-            temp_encode.unlink(missing_ok=True)
 
 def _render_crossfade_group(
         input_paths: list[Path],
