@@ -13435,7 +13435,9 @@ def _contextual_chapter_title(scene: dict[str, Any], index: int, language: str,
             if len(candidate) > 54:
                 candidate = candidate[:51].rsplit(" ", 1)[0].rstrip(" ,;:.") + "…"
             return candidate[:56]
-    # A mid-story card must not be labelled "Beginning".
+    # "Beginning" is reserved for cards in the opening 40 seconds only.
+    if at <= 40.0:
+        return _chapter_title_for_language(0, language)
     position = min(5, max(1, int((max(0.0, at) / max(1.0, duration)) * 6)))
     return _chapter_title_for_language(position, language)
 
