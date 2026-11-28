@@ -12998,6 +12998,74 @@ def _concat_normalized_parts(parts: list[Path], output_path: Path, temp_dir: Pat
     )
 
 
+
+def _reencode_ffconcat_to_duration(
+    listing: Path,
+    output_path: Path,
+    expected_duration: float,
+    *,
+    preserve_audio: bool = False,
+    context: str = "concat",
+) -> bool:
+    """Re-encode an ffconcat list to a deterministic CFR clock, padding/trimming to target."""
+    target = max(0.1, float(expected_duration))
+    temp_output = output_path.with_name(output_path.stem + ".exact-temp.mp4")
+    video_filter = (
+        f"tpad=stop_mode=clone:stop_duration={target:.6f},"
+        f"fps={FPS},trim=duration={target:.6f},setpts=PTS-STARTPTS,setsar=1"
+    )
+    audio_args = (
+        ["-map", "0:a:0?", "-af", f"apad,atrim=duration={target:.6f}",
+         "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2"]
+        if preserve_audio else ["-an"]
+    )
+    encoders = [
+        (HW_ENCODER, ["-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", "8000k", "-maxrate", "10000k"]),
+        ("libx264", ["-preset", "fast", "-crf", "18"]),
+    ]
+    failures: list[str] = []
+    for encoder, encoder_args in encoders:
+        try:
+            temp_output.unlink(missing_ok=True)
+            cmd = [
+                FFMPEG_BIN, "-hide_banner", "-loglevel", "error", "-y",
+                "-fflags", "+genpts", "-f", "concat", "-safe", "0", "-i", str(listing),
+                "-map", "0:v:0", *audio_args,
+                "-vf", video_filter,
+                "-c:v", encoder, *encoder_args,
+                "-pix_fmt", "yuv420p", "-profile:v", "high",
+                "-r", str(FPS), "-video_track_timescale", "15360",
+                "-t", f"{target:.6f}", "-movflags", "+faststart",
+                *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO),
+                str(temp_output),
+            ]
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                           timeout=max(300, int(target * 10)))
+            actual = get_duration(temp_output)
+            delta = abs(float(actual) - target) if actual is not None else float("inf")
+            if is_valid_video(temp_output) and actual is not None and delta < 0.25:
+                temp_output.replace(output_path)
+                log.info("[A/V Timing] %s exact re-encode PASS | target=%.3fs actual=%.3fs delta=%.3fs encoder=%s",
+                         context, target, actual, delta, encoder)
+                return True
+            failures.append(f"{encoder}: invalid output or duration delta={delta:.3f}s")
+        except Exception as exc:
+            detail = getattr(exc, "stderr", b"")
+            if isinstance(detail, bytes):
+                detail = detail.decode("utf-8", errors="replace")
+            elif not isinstance(detail, str):
+                detail = str(detail)
+            failures.append(f"{encoder}: {(detail or str(exc))[-1000:]}")
+        finally:
+            if not is_valid_video(temp_output):
+                try:
+                    temp_output.unlink(missing_ok=True)
+                except OSError:
+                    pass
+    log.error("[A/V Timing] %s exact re-encode failed: %s", context, " | ".join(failures))
+    return False
+
+
 def _render_crossfade_group(
     input_paths: list[Path],
     durations: list[float],
@@ -13057,7 +13125,16 @@ def _render_crossfade_group(
                 log.info("[Transitions] %s segments; duration %.3fs; transition specs=%s", len(input_paths), actual, transitions)
                 return True
         except Exception as exc:
-            log.warning("[Transitions] xfade group failed on %s: %s", encoder, exc)
+            stderr_tail = getattr(exc, "stderr", b"")
+            if isinstance(stderr_tail, bytes):
+                stderr_tail = stderr_tail.decode("utf-8", errors="replace")
+            elif not isinstance(stderr_tail, str):
+                stderr_tail = str(stderr_tail)
+            stderr_tail = (stderr_tail or "").strip()[-1000:]
+            log.warning(
+                "[Transitions] xfade group failed on %s: %s | stderr tail (last ~1000 chars): %s",
+                encoder, exc, stderr_tail or "<empty>",
+            )
     temp_output.unlink(missing_ok=True)
     return False
 
@@ -13073,8 +13150,9 @@ def concatenate_videos(
     crossfade_duration: float = 0.0,
     transition_start_index: int = 0,
     transitions: list[dict[str, Any]] | None = None,
+    expected_total: float | None = None,
 ) -> bool:
-    """Normalize once, stream-copy hard-cut runs, and xfade only flagged boundaries."""
+    """Normalize once, xfade requested boundaries, and enforce the requested final clock."""
     indexed = [(idx, p, d) for idx, (p, d) in enumerate(video_parts) if p.exists() and is_valid_video(p)]
     if not indexed:
         return False
@@ -13134,10 +13212,18 @@ def concatenate_videos(
             slide_output = temp_dir / f"{output_path.stem}_mixed_transitions.mp4"
             if not _render_crossfade_group([x[0] for x in runs], [x[1] for x in runs],
                                            slide_output, temp_dir, preserve_audio, run_transitions):
-                # If transition render fails, retain every scene and preserve exact clock via hard cuts.
-                log.warning("[Transitions] Mixed xfade fallback to stream-copy hard cuts; all scenes retained.")
-                if not _concat_normalized_parts([x[0] for x in runs], slide_output, temp_dir, preserve_audio=preserve_audio):
-                    raise RuntimeError("fallback stream-copy concat failed")
+                # Do not packet-copy the mixed-transition fallback: packet boundaries can
+                # drop a terminal frame or shorten a cut-run. Re-encode to the scheduled clock.
+                slide_expected = sum(float(x[1]) for x in runs)
+                log.warning("[Transitions] Mixed xfade fallback: deterministic hard-cut re-encode | segments=%s target=%.3fs",
+                            len(runs), slide_expected)
+                fallback_listing = temp_dir / f"{output_path.stem}_mixed_fallback_inputs.txt"
+                _write_ffconcat_listing([x[0] for x in runs], fallback_listing)
+                if not _reencode_ffconcat_to_duration(
+                    fallback_listing, slide_output, slide_expected,
+                    preserve_audio=preserve_audio, context=f"{output_path.name} mixed-xfade fallback",
+                ):
+                    raise RuntimeError("fallback re-encode concat failed")
             created.append(slide_output)
 
         final_parts = [x[1] for x in prefix]
@@ -13148,15 +13234,33 @@ def concatenate_videos(
         listing = temp_dir / f"{output_path.stem}_concat_inputs.txt"
         _write_ffconcat_listing(final_parts, listing)
         temp = output_path.with_suffix(".temp.mp4")
-        total_duration = sum(get_duration(p) or 0.0 for p in final_parts)
-        if not _run_concat_demuxer_with_fallback(listing, temp, output_path, preserve_audio=preserve_audio,
-                                                  context=output_path.name, duration_hint=total_duration or None):
+        packet_duration = sum(get_duration(p) or 0.0 for p in final_parts)
+        timeline_duration = sum(float(x[2]) for x in normalized)
+        target_duration = max(0.1, float(expected_total)) if expected_total is not None else timeline_duration
+        if not _run_concat_demuxer_with_fallback(
+            listing, temp, output_path, preserve_audio=preserve_audio,
+            context=output_path.name, duration_hint=target_duration or packet_duration or None,
+        ):
             raise RuntimeError(f"Не удалось собрать {output_path.name}")
         actual_total = get_duration(output_path)
-        expected_total = sum(x[2] for x in normalized)
-        if actual_total is not None and abs(actual_total - expected_total) >= 0.25:
-            log.error("[A/V Timing] concat duration mismatch: expected=%.3fs actual=%.3fs delta=%.3fs",
-                      expected_total, actual_total, actual_total - expected_total)
+        if actual_total is None:
+            raise RuntimeError(f"Не удалось определить длительность {output_path.name}")
+        frame_tolerance = max(0.01, 1.0 / max(1, int(FPS)))
+        if abs(actual_total - target_duration) > frame_tolerance:
+            log.warning("[A/V Timing] concat clock differs from target; exact re-encode required | timeline=%.3fs target=%.3fs actual=%.3fs",
+                        timeline_duration, target_duration, actual_total)
+            if not _reencode_ffconcat_to_duration(
+                listing, output_path, target_duration,
+                preserve_audio=preserve_audio, context=f"{output_path.name} final clock alignment",
+            ):
+                raise RuntimeError(f"A/V duration alignment failed: target={target_duration:.3f}s actual={actual_total:.3f}s")
+            actual_total = get_duration(output_path)
+        final_delta = abs(float(actual_total) - target_duration) if actual_total is not None else float("inf")
+        log.info("[A/V Timing] concat final | timeline=%.3fs target=%.3fs actual=%s delta=%.3fs",
+                 timeline_duration, target_duration,
+                 f"{actual_total:.3f}s" if actual_total is not None else "unknown", final_delta)
+        if actual_total is None or final_delta >= 0.25:
+            raise RuntimeError(f"A/V duration mismatch: target={target_duration:.3f}s actual={actual_total} delta={final_delta:.3f}s")
         log.info("✅ [Montage] %s | scenes=%s | cut-runs=%s | transition boundaries=%s",
                  output_path.name, len(normalized), len(runs), len(run_transitions))
         return is_valid_video(output_path)
@@ -17099,6 +17203,8 @@ async def process_project(
             })
 
         no_audio = Path(state.data["montage"]["no_audio"])
+        audio_clock = get_duration(Path(str(state.data.get("audio", {}).get("path", ""))))
+        expected_montage_duration = float(audio_clock) if audio_clock is not None else float(audio_duration)
         if not is_valid_video(no_audio):
             transition_start_index = (
                 1 if state.data["intro"]["done"] and Path(state.data["intro"]["output"]).exists()
@@ -17112,6 +17218,7 @@ async def process_project(
                 crossfade_duration=0.0,
                 transition_start_index=transition_start_index,
                 transitions=transition_specs,
+                expected_total=expected_montage_duration,
             ):
                 raise RuntimeError("Не удалось собрать видеомонтаж")
 
@@ -17121,14 +17228,28 @@ async def process_project(
             state.save()
 
         # Verify the completed silent montage against the exact mastered narration clock.
-        audio_clock = get_duration(Path(str(state.data.get("audio", {}).get("path", ""))))
+        audio_clock = get_duration(Path(str(state.data.get("audio", {}).get("path", "")))) or expected_montage_duration
         video_clock = get_duration(no_audio)
         if audio_clock is not None and video_clock is not None:
             delta = abs(video_clock - audio_clock)
             log.info("[A/V Timing] video_no_audio=%.3fs | audio.wav=%.3fs | delta=%.3fs (target < 0.250s)", video_clock, audio_clock, delta)
             if delta >= 0.25:
-                log.error("[A/V Timing] Длительности видео и озвучки расходятся на %.3fs; останавливаю сборку, чтобы не выпустить ролик с дрейфом синхронизации.", delta)
-                raise RuntimeError(f"A/V duration mismatch: video_no_audio={video_clock:.3f}s, audio.wav={audio_clock:.3f}s, delta={delta:.3f}s (limit 0.250s)")
+                log.error("[A/V Timing] Video/audio delta %.3fs; trying exact narration-clock alignment.", delta)
+                alignment_listing = state.work_dir / "video_no_audio_alignment_inputs.txt"
+                _write_ffconcat_listing([no_audio], alignment_listing)
+                aligned_temp = no_audio.with_name(no_audio.stem + ".aligned.tmp.mp4")
+                if not _reencode_ffconcat_to_duration(
+                    alignment_listing, aligned_temp, float(audio_clock),
+                    preserve_audio=False, context="video_no_audio narration-clock alignment",
+                ):
+                    raise RuntimeError(f"A/V duration mismatch: video={video_clock:.3f}s audio={audio_clock:.3f}s delta={delta:.3f}s")
+                aligned_temp.replace(no_audio)
+                video_clock = get_duration(no_audio)
+                delta = abs(float(video_clock) - float(audio_clock)) if video_clock is not None else float("inf")
+                log.info("[A/V Timing] aligned video_no_audio=%s | audio.wav=%.3fs | delta=%.3fs",
+                         f"{video_clock:.3f}s" if video_clock is not None else "unknown", audio_clock, delta)
+                if video_clock is None or delta >= 0.25:
+                    raise RuntimeError(f"A/V duration mismatch after alignment: video={video_clock} audio={audio_clock:.3f}s delta={delta:.3f}s")
         # 8. Audio Mix
         state.set_stage("audio_mix")
         with_audio = Path(state.data["montage"]["with_audio"])
