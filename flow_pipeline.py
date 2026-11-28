@@ -32,6 +32,7 @@ import requests
 from PIL import Image, ImageOps
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 from adguard_rotator import rotate_adguard_windows_vpn
+
 PIPELINE_VERSION = "2026-11-27-UNIFIED-MASTERING-CLEAN-EXPORT-V75"
 FFMPEG_BIN = shutil.which("ffmpeg") or "ffmpeg"
 FFPROBE_BIN = shutil.which("ffprobe") or "ffprobe"
@@ -89,6 +90,7 @@ def get_channel_hero_skin_override(channel_name: str) -> str:
             return str(prompt or "").strip()
     return ""
 
+
 # ------------------------------------------------------------
 # Flow browser
 # ------------------------------------------------------------
@@ -121,42 +123,76 @@ FLOW_PROMPT_BOX_WAIT_SECONDS = 90.0
 
 FLOW_PROFILES = [
     # Все профили имеют уникальные user_data_dir и CDP-порты; все включённые профили поддерживают изображения и видео.
-    {"name": "pro_01", "user_data_dir": r"C:\FlowAccounts\pro_01", "port": 9333, "enabled": True, "supports_video": True},
-    {"name": "pro_02", "user_data_dir": r"C:\FlowAccounts\pro_02", "port": 9334, "enabled": True, "supports_video": True},
-    {"name": "pro_03", "user_data_dir": r"C:\FlowAccounts\pro_03", "port": 9335, "enabled": True, "supports_video": True},
-    {"name": "pro_04", "user_data_dir": r"C:\FlowAccounts\pro_04", "port": 9336, "enabled": True, "supports_video": True},
-    {"name": "pro_01_test", "user_data_dir": r"C:\FlowAccounts\pro_01_test", "port": 9341, "enabled": True, "supports_video": True},
-    {"name": "pro_01_clean", "user_data_dir": r"C:\FlowAccounts\pro_01_clean", "port": 9342, "enabled": True, "supports_video": True},
-    {"name": "pro_02_clean", "user_data_dir": r"C:\FlowAccounts\pro_02_clean", "port": 9344, "enabled": True, "supports_video": True},
-    {"name": "pro_06", "user_data_dir": r"C:\FlowAccounts\pro_06", "port": 9345, "enabled": True, "supports_video": True},
-    {"name": "pro_07", "user_data_dir": r"C:\FlowAccounts\pro_07", "port": 9346, "enabled": True, "supports_video": True},
-    {"name": "pro_08", "user_data_dir": r"C:\FlowAccounts\pro_08", "port": 9347, "enabled": True, "supports_video": True},
-    {"name": "pro_05", "user_data_dir": r"C:\FlowAccounts\pro_05", "port": 9337, "enabled": True, "supports_video": False},
-    {"name": "pro_09", "user_data_dir": r"C:\FlowAccounts\pro_09", "port": 9348, "enabled": True, "supports_video": True},
-    {"name": "pro_10", "user_data_dir": r"C:\FlowAccounts\pro_10", "port": 9349, "enabled": True, "supports_video": True},
-    {"name": "pro_11", "user_data_dir": r"C:\FlowAccounts\pro_11", "port": 9350, "enabled": True, "supports_video": True},
-    {"name": "pro_12", "user_data_dir": r"C:\FlowAccounts\pro_12", "port": 9351, "enabled": True, "supports_video": True},
-    {"name": "pro_13", "user_data_dir": r"C:\FlowAccounts\pro_13", "port": 9352, "enabled": False, "supports_video": False},
-    {"name": "pro_14", "user_data_dir": r"C:\FlowAccounts\pro_14", "port": 9353, "enabled": True, "supports_video": True},
-    {"name": "pro_15", "user_data_dir": r"C:\FlowAccounts\pro_15", "port": 9354, "enabled": True, "supports_video": True},
-    {"name": "pro_16", "user_data_dir": r"C:\FlowAccounts\pro_16", "port": 9355, "enabled": True, "supports_video": True},
-    {"name": "pro_17", "user_data_dir": r"C:\FlowAccounts\pro_17", "port": 9356, "enabled": True, "supports_video": True},
-    {"name": "pro_18", "user_data_dir": r"C:\FlowAccounts\pro_18", "port": 9357, "enabled": True, "supports_video": True},
-    {"name": "pro_19", "user_data_dir": r"C:\FlowAccounts\pro_19", "port": 9358, "enabled": True, "supports_video": True},
-    {"name": "pro_20", "user_data_dir": r"C:\FlowAccounts\pro_20", "port": 9359, "enabled": True, "supports_video": False},
-    {"name": "pro_21", "user_data_dir": r"C:\FlowAccounts\pro_21", "port": 9360, "enabled": True, "supports_video": True},
-    {"name": "pro_22", "user_data_dir": r"C:\FlowAccounts\pro_22", "port": 9361, "enabled": True, "supports_video": True},
-    {"name": "pro_23", "user_data_dir": r"C:\FlowAccounts\pro_23", "port": 9362, "enabled": True, "supports_video": True},
-    {"name": "pro_24", "user_data_dir": r"C:\FlowAccounts\pro_24", "port": 9363, "enabled": True, "supports_video": True},
-    {"name": "pro_25", "user_data_dir": r"C:\FlowAccounts\pro_25", "port": 9364, "enabled": True, "supports_video": True},
-    {"name": "pro_26", "user_data_dir": r"C:\FlowAccounts\pro_26", "port": 9365, "enabled": True, "supports_video": False},
-    {"name": "pro_27", "user_data_dir": r"C:\FlowAccounts\pro_27", "port": 9366, "enabled": True, "supports_video": True},
-    {"name": "pro_28", "user_data_dir": r"C:\FlowAccounts\pro_28", "port": 9367, "enabled": True, "supports_video": True},
-    {"name": "pro_29", "user_data_dir": r"C:\FlowAccounts\pro_29", "port": 9368, "enabled": True, "supports_video": True},
-    {"name": "pro_30", "user_data_dir": r"C:\FlowAccounts\pro_30", "port": 9369, "enabled": True, "supports_video": True},
+    {"name": "pro_01", "user_data_dir": r"C:\FlowAccounts\pro_01", "port": 9333, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_02", "user_data_dir": r"C:\FlowAccounts\pro_02", "port": 9334, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_03", "user_data_dir": r"C:\FlowAccounts\pro_03", "port": 9335, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_04", "user_data_dir": r"C:\FlowAccounts\pro_04", "port": 9336, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_01_test", "user_data_dir": r"C:\FlowAccounts\pro_01_test", "port": 9341, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_01_clean", "user_data_dir": r"C:\FlowAccounts\pro_01_clean", "port": 9342, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_02_clean", "user_data_dir": r"C:\FlowAccounts\pro_02_clean", "port": 9344, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_06", "user_data_dir": r"C:\FlowAccounts\pro_06", "port": 9345, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_07", "user_data_dir": r"C:\FlowAccounts\pro_07", "port": 9346, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_08", "user_data_dir": r"C:\FlowAccounts\pro_08", "port": 9347, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_05", "user_data_dir": r"C:\FlowAccounts\pro_05", "port": 9337, "enabled": True,
+     "supports_video": False},
+    {"name": "pro_09", "user_data_dir": r"C:\FlowAccounts\pro_09", "port": 9348, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_10", "user_data_dir": r"C:\FlowAccounts\pro_10", "port": 9349, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_11", "user_data_dir": r"C:\FlowAccounts\pro_11", "port": 9350, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_12", "user_data_dir": r"C:\FlowAccounts\pro_12", "port": 9351, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_13", "user_data_dir": r"C:\FlowAccounts\pro_13", "port": 9352, "enabled": False,
+     "supports_video": False},
+    {"name": "pro_14", "user_data_dir": r"C:\FlowAccounts\pro_14", "port": 9353, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_15", "user_data_dir": r"C:\FlowAccounts\pro_15", "port": 9354, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_16", "user_data_dir": r"C:\FlowAccounts\pro_16", "port": 9355, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_17", "user_data_dir": r"C:\FlowAccounts\pro_17", "port": 9356, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_18", "user_data_dir": r"C:\FlowAccounts\pro_18", "port": 9357, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_19", "user_data_dir": r"C:\FlowAccounts\pro_19", "port": 9358, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_20", "user_data_dir": r"C:\FlowAccounts\pro_20", "port": 9359, "enabled": True,
+     "supports_video": False},
+    {"name": "pro_21", "user_data_dir": r"C:\FlowAccounts\pro_21", "port": 9360, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_22", "user_data_dir": r"C:\FlowAccounts\pro_22", "port": 9361, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_23", "user_data_dir": r"C:\FlowAccounts\pro_23", "port": 9362, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_24", "user_data_dir": r"C:\FlowAccounts\pro_24", "port": 9363, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_25", "user_data_dir": r"C:\FlowAccounts\pro_25", "port": 9364, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_26", "user_data_dir": r"C:\FlowAccounts\pro_26", "port": 9365, "enabled": True,
+     "supports_video": False},
+    {"name": "pro_27", "user_data_dir": r"C:\FlowAccounts\pro_27", "port": 9366, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_28", "user_data_dir": r"C:\FlowAccounts\pro_28", "port": 9367, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_29", "user_data_dir": r"C:\FlowAccounts\pro_29", "port": 9368, "enabled": True,
+     "supports_video": True},
+    {"name": "pro_30", "user_data_dir": r"C:\FlowAccounts\pro_30", "port": 9369, "enabled": True,
+     "supports_video": True},
 ]
 
 FLOW_PROXY_PORTS = []  # все окна Flow на одном порту с общим FLOW-POOL
+
 
 def get_flow_proxy_port(profile: dict[str, Any]) -> int | None:
     if not FLOW_PROXY_PORTS:
@@ -166,8 +202,9 @@ def get_flow_proxy_port(profile: dict[str, Any]) -> int | None:
         return int(explicit)
     return int(FLOW_PROXY_PORTS[0])
 
+
 CLASH_API_URL = "http://127.0.0.1:9097"  # подставьте порт из External Controller
-CLASH_API_SECRET = "flow1234"                    # подставьте Secret, если задан
+CLASH_API_SECRET = "flow1234"  # подставьте Secret, если задан
 CLASH_FLOW_GROUP = "FLOW-POOL"
 CLASH_FLOW_PROXIES = ["MyProxy", "MyProxy2", "MyVDSina"]
 _clash_flow_proxy_idx = 0
@@ -198,28 +235,34 @@ def rotate_clash_flow_proxy(reason: str = "rate limit") -> str | None:
             proxies=no_proxy,
         )
         if r.status_code not in (200, 204):
-            log.warning("[Clash Rotate] Не удалось переключить %s -> %s (HTTP %s: %s)", CLASH_FLOW_GROUP, target, r.status_code, r.text[:200])
+            log.warning("[Clash Rotate] Не удалось переключить %s -> %s (HTTP %s: %s)", CLASH_FLOW_GROUP, target,
+                        r.status_code, r.text[:200])
             return None
 
         # Закрываем только активные keep-alive соединения Flow, чтобы Chrome сразу пошёл через новый IP
         closed = 0
         try:
-            conns = requests.get(f"{CLASH_API_URL}/connections", headers=headers, timeout=5, proxies=no_proxy).json().get("connections") or []
+            conns = requests.get(f"{CLASH_API_URL}/connections", headers=headers, timeout=5,
+                                 proxies=no_proxy).json().get("connections") or []
             for conn in conns:
                 host = str((conn.get("metadata") or {}).get("host", "")).lower()
-                if any(dom in host for dom in ("flow.google", "flow-content.google", "labs.google", "aisandbox-pa.googleapis.com")):
+                if any(dom in host for dom in
+                       ("flow.google", "flow-content.google", "labs.google", "aisandbox-pa.googleapis.com")):
                     cid = conn.get("id")
                     if cid:
-                        requests.delete(f"{CLASH_API_URL}/connections/{cid}", headers=headers, timeout=3, proxies=no_proxy)
+                        requests.delete(f"{CLASH_API_URL}/connections/{cid}", headers=headers, timeout=3,
+                                        proxies=no_proxy)
                         closed += 1
         except Exception:
             pass
 
-        log.info("🔄 [Clash Rotate] Переключил %s -> %s (причина: %s; сброшено Flow-соединений: %s)", CLASH_FLOW_GROUP, target, reason, closed)
+        log.info("🔄 [Clash Rotate] Переключил %s -> %s (причина: %s; сброшено Flow-соединений: %s)", CLASH_FLOW_GROUP,
+                 target, reason, closed)
         return target
     except Exception as exc:
         log.warning("[Clash Rotate] Ошибка обращения к API Clash Verge: %s", exc)
         return None
+
 
 AUTO_LAUNCH_CHROME = True
 MOVE_WINDOW_WHEN_SWITCHING = True
@@ -310,7 +353,6 @@ SUBTITLE_FONT_SIZE = 25
 SUBTITLE_MARGIN_V = 16
 ENABLE_SUBTITLE_KARAOKE = False
 
-
 # Legitimate creative variation for viewing quality and narrative pacing. These settings
 # are not anti-detection measures and do not make repetitive material eligible for YPP.
 # Restored visual-variation / Ken Burns parameters from the original montage.
@@ -321,8 +363,10 @@ AUDIO_TEMPO_JITTER = (0.995, 1.005)
 CROP_PERCENT_RANGE = (0.015, 0.045)
 FILM_GRAIN_STRENGTH = (1, 2)
 ENABLE_PARALLAX_FILM_GRAIN = True
-FFMPEG_CLEAN_META_VIDEO = ["-map_metadata", "-1", "-map_chapters", "-1", "-fflags", "+bitexact", "-flags:v", "+bitexact"]
-FFMPEG_CLEAN_META_AV = ["-map_metadata", "-1", "-map_chapters", "-1", "-fflags", "+bitexact", "-flags:v", "+bitexact", "-flags:a", "+bitexact"]
+FFMPEG_CLEAN_META_VIDEO = ["-map_metadata", "-1", "-map_chapters", "-1", "-fflags", "+bitexact", "-flags:v",
+                           "+bitexact"]
+FFMPEG_CLEAN_META_AV = ["-map_metadata", "-1", "-map_chapters", "-1", "-fflags", "+bitexact", "-flags:v", "+bitexact",
+                        "-flags:a", "+bitexact"]
 COLOR_CONTRAST_JITTER = (0.985, 1.025)
 COLOR_BRIGHTNESS_JITTER = (-0.012, 0.018)
 COLOR_SATURATION_JITTER = (0.96, 1.04)
@@ -389,9 +433,9 @@ ENABLE_BACKGROUND_MUSIC = False
 STAGE4_VERSION = "2026-11-28-stage4-chapters-micro-sfx-v1"
 ENABLE_CHAPTER_TITLE_CARDS = True
 ENABLE_MICRO_SFX = True
-MICRO_SFX_GAIN = 0.035       # linear gain (~-29 dB), intentionally far below narration
-MICRO_SFX_FREQUENCY = 58     # low, soft thump; avoids sharp/high-frequency transients
-MICRO_SFX_DURATION = 0.34    # seconds per accent
+MICRO_SFX_GAIN = 0.035  # linear gain (~-29 dB), intentionally far below narration
+MICRO_SFX_FREQUENCY = 58  # low, soft thump; avoids sharp/high-frequency transients
+MICRO_SFX_DURATION = 0.34  # seconds per accent
 FLOW_VIDEO_AUDIO_POLICY_MARKER = "FLOW VIDEO AUDIO POLICY —"
 FLOW_VIDEO_AUDIO_POLICY = """FLOW VIDEO AUDIO POLICY — Prefer silence or only soft, natural location ambience (quiet wind, leaves, or room tone). No music, speech, singing, whistling, or sharp sound effects."""
 # One bounded recovery path for Flow's audio backend failures. After Gemini rewrites
@@ -478,6 +522,7 @@ def enforce_flow_video_output(prompt: str, retry_after_image: bool = False) -> s
     directive = FLOW_VIDEO_OUTPUT_RETRY_DIRECTIVE if retry_after_image else FLOW_VIDEO_OUTPUT_DIRECTIVE
     return f"{directive}\n\n{base}".strip() if base else directive
 
+
 # Project-level visual style selector; realism remains the default.
 VISUAL_STYLE_OPTIONS = {
     "realistic": "Реализм — документальная фотография (по умолчанию)",
@@ -511,9 +556,10 @@ def visual_style_label(style_id: str | None = None) -> str:
 def visual_style_description(media_kind: str = "image", style_id: str | None = None) -> str:
     style = normalize_visual_style(style_id or ACTIVE_VISUAL_STYLE_ID)
     if style == "colorful_painterly":
-        core = ("richly coloured hand-painted historical oil-painting illustration on canvas, visible confident brushstrokes, "
-                "subtle impasto texture, luminous saturated pigments, warm golds, copper reds, deep blues and natural greens, "
-                "dramatic chiaroscuro with readable shadow detail, unmistakably hand-painted surfaces, believable anatomy and recognisable faces")
+        core = (
+            "richly coloured hand-painted historical oil-painting illustration on canvas, visible confident brushstrokes, "
+            "subtle impasto texture, luminous saturated pigments, warm golds, copper reds, deep blues and natural greens, "
+            "dramatic chiaroscuro with readable shadow detail, unmistakably hand-painted surfaces, believable anatomy and recognisable faces")
         if media_kind == "video":
             return "gently animated " + core
         return core
@@ -529,9 +575,10 @@ def visual_style_description(media_kind: str = "image", style_id: str | None = N
             return "bold 2D YouTube storytime thumbnail illustration, simplified expressive character, thick dark outlines, soft cel shading, warm cinematic colours and one clear focal idea"
         return core
     if style == "cartoon_2d":
-        core = ("vibrant 2D European animation and graphic-novel illustration, bold clean ink outlines, crisp contours, "
-                "flat cel-shading with gentle gradient accents, expressive but consistent character designs, richly saturated colours, "
-                "clear silhouettes, stylised yet coherent anatomy, illustrated backgrounds, clean comic-book rendering")
+        core = (
+            "vibrant 2D European animation and graphic-novel illustration, bold clean ink outlines, crisp contours, "
+            "flat cel-shading with gentle gradient accents, expressive but consistent character designs, richly saturated colours, "
+            "clear silhouettes, stylised yet coherent anatomy, illustrated backgrounds, clean comic-book rendering")
         if media_kind == "video":
             return "gently animated " + core
         if media_kind == "thumbnail":
@@ -548,41 +595,48 @@ def visual_style_rules(media_kind: str = "image", style_id: str | None = None) -
     style = normalize_visual_style(style_id or ACTIVE_VISUAL_STYLE_ID)
     if style == "colorful_painterly":
         motion = " For video, gently animate the painted scene without changing its style." if media_kind == "video" else " Keep this as one still illustration, not a sequence or collage."
-        return ("- VISUAL STYLE (override conflicting style wording): richly coloured classical oil-painting illustration, visible "
-                "brushstrokes and tactile canvas/impasto texture, luminous saturated pigments, warm golds, copper reds, deep blues "
-                "and natural greens, dramatic chiaroscuro with readable shadow detail, painterly realism. Keep faces recognisable, "
-                "age accurate and anatomy natural." + motion + " Not photorealistic, not live-action, not a photograph, not 3D/CGI, not cartoon or anime.")
+        return (
+                    "- VISUAL STYLE (override conflicting style wording): richly coloured classical oil-painting illustration, visible "
+                    "brushstrokes and tactile canvas/impasto texture, luminous saturated pigments, warm golds, copper reds, deep blues "
+                    "and natural greens, dramatic chiaroscuro with readable shadow detail, painterly realism. Keep faces recognisable, "
+                    "age accurate and anatomy natural." + motion + " Not photorealistic, not live-action, not a photograph, not 3D/CGI, not cartoon or anime.")
     if style == "comic_explainer":
         if media_kind == "video":
-            extra = (" Animate with smooth restrained 2D motion; keep linework and facial identity stable, avoid frame flicker, morphing, "
-                     "sliding facial features, and style changes.")
+            extra = (
+                " Animate with smooth restrained 2D motion; keep linework and facial identity stable, avoid frame flicker, morphing, "
+                "sliding facial features, and style changes.")
         elif media_kind == "thumbnail":
-            extra = (" For a thumbnail, use one readable story-specific focal subject, a bold silhouette, clear facial expression, "
-                     "warm/cool cinematic contrast and no typography or collage.")
+            extra = (
+                " For a thumbnail, use one readable story-specific focal subject, a bold silhouette, clear facial expression, "
+                "warm/cool cinematic contrast and no typography or collage.")
         else:
             extra = " Use one still landscape illustration, not a sequence or collage."
-        return ("- VISUAL STYLE (override conflicting style wording): polished 2D YouTube storytime / comic-explainer illustration; "
-                "simplified rounded character designs, bold consistent dark outlines, clean readable linework, soft cel-shading with "
-                "subtle gradient accents, expressive but coherent faces, warm cinematic lighting and cool shadow separation, vivid balanced "
-                "colours, detailed-but-simplified backgrounds, strong readable silhouettes, medium/wide storytelling composition, full-bleed "
-                "landscape 16:9. Preserve the same character identity and art direction across scenes. Not photorealistic, not an oil painting, "
-                "not 3D/CGI, not anime or manga." + extra)
+        return (
+                    "- VISUAL STYLE (override conflicting style wording): polished 2D YouTube storytime / comic-explainer illustration; "
+                    "simplified rounded character designs, bold consistent dark outlines, clean readable linework, soft cel-shading with "
+                    "subtle gradient accents, expressive but coherent faces, warm cinematic lighting and cool shadow separation, vivid balanced "
+                    "colours, detailed-but-simplified backgrounds, strong readable silhouettes, medium/wide storytelling composition, full-bleed "
+                    "landscape 16:9. Preserve the same character identity and art direction across scenes. Not photorealistic, not an oil painting, "
+                    "not 3D/CGI, not anime or manga." + extra)
     if style == "cartoon_2d":
         if media_kind == "video":
-            extra = (" Animate with restrained, smooth 2D motion; keep outlines stable, avoid flicker, face morphing, sliding facial features, "
-                     "or switching art styles between frames.")
+            extra = (
+                " Animate with restrained, smooth 2D motion; keep outlines stable, avoid flicker, face morphing, sliding facial features, "
+                "or switching art styles between frames.")
         elif media_kind == "thumbnail":
-            extra = (" For a thumbnail, use one strong story-accurate focal subject, expressive but consistent faces, bold silhouette and "
-                     "high readable contrast; no typography or collage.")
+            extra = (
+                " For a thumbnail, use one strong story-accurate focal subject, expressive but consistent faces, bold silhouette and "
+                "high readable contrast; no typography or collage.")
         else:
             extra = " Keep this as one still illustration, not a sequence or collage."
-        return ("- VISUAL STYLE (override conflicting style wording): clean 2D European animation / graphic-novel illustration, "
-                "bold consistent black or dark ink outlines, crisp contours, vibrant flat cel-shading with restrained gradient accents, "
-                "rich saturated but controlled colours, clear silhouettes, stylised yet coherent anatomy, expressive and recognisable "
-                "faces, consistent character design, layered illustrated backgrounds, full-bleed landscape 16:9 composition. Preserve each "
-                "character's canonical age, face shape, hair, skin tone and distinguishing features. Not photorealistic, not an oil painting, "
-                "not 3D/CGI, not anime or manga."
-                + extra)
+        return (
+                    "- VISUAL STYLE (override conflicting style wording): clean 2D European animation / graphic-novel illustration, "
+                    "bold consistent black or dark ink outlines, crisp contours, vibrant flat cel-shading with restrained gradient accents, "
+                    "rich saturated but controlled colours, clear silhouettes, stylised yet coherent anatomy, expressive and recognisable "
+                    "faces, consistent character design, layered illustrated backgrounds, full-bleed landscape 16:9 composition. Preserve each "
+                    "character's canonical age, face shape, hair, skin tone and distinguishing features. Not photorealistic, not an oil painting, "
+                    "not 3D/CGI, not anime or manga."
+                    + extra)
     if media_kind == "video":
         return "- VISUAL STYLE: photorealistic live-action historical documentary cinematography, natural lighting and authentic textures; no illustration, painting, CGI or cartoon style."
     return "- VISUAL STYLE: photorealistic full-colour historical documentary photography, natural lifelike colours, realistic textures and believable anatomy; no illustration, painting, CGI or cartoon style."
@@ -612,29 +666,36 @@ def enforce_selected_visual_style(prompt: str, media_kind: str = "image") -> str
         replacements = {
             "photorealistic live-action historical documentary cinematography": (
                 "gently animated hand-painted oil-painting scene" if style == "colorful_painterly"
-                else ("polished 2D storytime explainer scene" if style == "comic_explainer" else "restrained 2D illustrated scene")
+                else (
+                    "polished 2D storytime explainer scene" if style == "comic_explainer" else "restrained 2D illustrated scene")
             ),
             "photorealistic full-colour historical documentary photography": (
                 "hand-painted oil illustration" if style == "colorful_painterly"
-                else ("polished 2D YouTube storytime illustration" if style == "comic_explainer" else "2D graphic-novel illustration")
+                else (
+                    "polished 2D YouTube storytime illustration" if style == "comic_explainer" else "2D graphic-novel illustration")
             ),
             "photorealistic historical documentary photography": (
                 "hand-painted oil illustration" if style == "colorful_painterly"
-                else ("polished 2D YouTube storytime illustration" if style == "comic_explainer" else "2D graphic-novel illustration")
+                else (
+                    "polished 2D YouTube storytime illustration" if style == "comic_explainer" else "2D graphic-novel illustration")
             ),
-            "photorealistic": ("painterly hand-painted" if style == "colorful_painterly" else ("polished 2D storytime illustrated" if style == "comic_explainer" else "stylised 2D illustrated")),
-            "photo-realistic": ("painterly hand-painted" if style == "colorful_painterly" else ("polished 2D storytime illustrated" if style == "comic_explainer" else "stylised 2D illustrated")),
+            "photorealistic": ("painterly hand-painted" if style == "colorful_painterly" else (
+                "polished 2D storytime illustrated" if style == "comic_explainer" else "stylised 2D illustrated")),
+            "photo-realistic": ("painterly hand-painted" if style == "colorful_painterly" else (
+                "polished 2D storytime illustrated" if style == "comic_explainer" else "stylised 2D illustrated")),
             "photographic": "painted" if style == "colorful_painterly" else "illustrated",
             "live-action": "painted live motion" if style == "colorful_painterly" else "2D animated",
             "documentary photography": "painted documentary illustration" if style == "colorful_painterly" else "2D documentary illustration",
         }
         for term, replacement in sorted(replacements.items(), key=lambda item: len(item[0]), reverse=True):
             pattern = re.compile(re.escape(term), re.IGNORECASE)
+
             def replace_if_positive(match, replacement=replacement, whole_text=base):
                 prefix = whole_text[max(0, match.start() - 28):match.start()].casefold()
                 if re.search(r"(?:not|never|no|avoid|without)\s+(?:(?:a|an|the)\s+)?$", prefix):
                     return match.group(0)
                 return replacement
+
             base = pattern.sub(replace_if_positive, base)
 
     if style == "colorful_painterly":
@@ -707,6 +768,7 @@ def style_format_requirements(style_id: str | None = None) -> str:
 - NO black bars, NO side mattes, NO letterboxing or pillarboxing, NO border, NO frame, NO picture-inside-a-picture, NO film-strip or sprocket holes, NO faux film still, NO camera UI, NO timestamp, NO markings along the edges, NO vignette.
 - Do not draw a physical screen, framed photograph, cinema screen or image border. Show the scene directly as a clean full-bleed photograph.
 - Contemporary clean colour rendition: natural contrast and colour, not an archival or black-and-white treatment. No added text overlays, captions, logos, or watermarks. Physical writing must follow the narration-language rule."""
+
 
 # ============================================================================
 # LOGGING
@@ -827,12 +889,12 @@ def is_valid_video(path: Path, min_size: int = 100_000) -> bool:
     width, height = get_video_resolution(path)
     duration = get_duration(path)
     return (
-        width is not None
-        and height is not None
-        and width >= 640
-        and height >= 360
-        and duration is not None
-        and duration > 0.1
+            width is not None
+            and height is not None
+            and width >= 640
+            and height >= 360
+            and duration is not None
+            and duration > 0.1
     )
 
 
@@ -890,9 +952,11 @@ def normalize_preview_image_1280x720(path: Path, apply_finishing: bool = True) -
                 rotated = rgb.rotate(angle, resample=Image.Resampling.BICUBIC, expand=False)
                 edge = random.uniform(0.016, 0.024)
                 left, top = int(rotated.width * edge), int(rotated.height * edge)
-                right, bottom = max(left + 1, int(rotated.width * (1.0 - edge))), max(top + 1, int(rotated.height * (1.0 - edge)))
+                right, bottom = max(left + 1, int(rotated.width * (1.0 - edge))), max(top + 1, int(rotated.height * (
+                            1.0 - edge)))
                 cropped = rotated.crop((left, top, right, bottom))
-                fitted = ImageOps.fit(cropped, PREVIEW_OUTPUT_SIZE, method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+                fitted = ImageOps.fit(cropped, PREVIEW_OUTPUT_SIZE, method=Image.Resampling.LANCZOS,
+                                      centering=(0.5, 0.5))
                 pixels = np.asarray(fitted, dtype=np.float32) / 255.0
                 pixels = np.power(np.clip(pixels, 0.0, 1.0), random.uniform(0.985, 1.015)) * 255.0
                 pixels += np.random.normal(0.0, random.uniform(1.1, 1.7), pixels.shape).astype(np.float32)
@@ -900,7 +964,8 @@ def normalize_preview_image_1280x720(path: Path, apply_finishing: bool = True) -
             else:
                 fitted = ImageOps.fit(rgb, PREVIEW_OUTPUT_SIZE, method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
                 finished = Image.fromarray(np.asarray(fitted, dtype=np.uint8), mode="RGB")
-        image_format = {".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG", ".webp": "WEBP", ".bmp": "BMP"}.get(path.suffix.casefold())
+        image_format = {".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG", ".webp": "WEBP", ".bmp": "BMP"}.get(
+            path.suffix.casefold())
         if image_format is None:
             log.warning("[Preview] Неподдерживаемый формат превью: %s", path)
             return False
@@ -921,7 +986,8 @@ def normalize_preview_image_1280x720(path: Path, apply_finishing: bool = True) -
             if check.info.get("icc_profile") or check.info.get("exif"):
                 raise RuntimeError("в экспорт попали ICC/EXIF-метаданные")
         temp_path.replace(path)
-        log.info("✅ [Preview] Чистый экспорт %sx%s (%s): %s", PREVIEW_OUTPUT_WIDTH, PREVIEW_OUTPUT_HEIGHT, "finished" if apply_finishing else "original", path.name)
+        log.info("✅ [Preview] Чистый экспорт %sx%s (%s): %s", PREVIEW_OUTPUT_WIDTH, PREVIEW_OUTPUT_HEIGHT,
+                 "finished" if apply_finishing else "original", path.name)
         return True
     except Exception as exc:
         log.error("[Preview] Не удалось привести %s к 1280x720: %s", path, exc)
@@ -932,7 +998,6 @@ def normalize_preview_image_1280x720(path: Path, apply_finishing: bool = True) -
                 temp_path.unlink(missing_ok=True)
             except OSError:
                 pass
-
 
 
 # Character-reference similarity checks are intentionally disabled in the pipeline.
@@ -1056,6 +1121,7 @@ def apply_youtube_content_safety_rules(prompt: str, media_kind: str = "image") -
 
 VISUAL_TEXT_LANGUAGE_MARKER = "VISIBLE SCENE TEXT LANGUAGE:"
 
+
 def narration_language_name(target_lang: str) -> str:
     """Human-readable language name used to guide generated scene lettering."""
     normalized = str(target_lang or "ru").strip().lower().split("-")[0]
@@ -1128,9 +1194,9 @@ SAFE_HARM_CONTEXT_PATTERN = re.compile(
 
 
 def make_safe_regeneration_prompt(
-    context_text: str = "",
-    setting_context: dict[str, Any] | None = None,
-    media_kind: str = "image",
+        context_text: str = "",
+        setting_context: dict[str, Any] | None = None,
+        media_kind: str = "image",
 ) -> str:
     """Build a conservative replacement prompt while preserving safe, relevant vulnerable subjects."""
     context = str(context_text or "")
@@ -1189,8 +1255,9 @@ def make_safe_regeneration_prompt(
     active_style = normalize_visual_style(ACTIVE_VISUAL_STYLE_ID)
     lighting_desc = ("painterly directional light, rich colour pigments, tactile brushwork"
                      if active_style == "colorful_painterly"
-                     else ("warm cinematic key light, cool shadow separation, clean cel-shading" if active_style == "comic_explainer"
-                           else "natural light, authentic textures"))
+                     else (
+        "warm cinematic key light, cool shadow separation, clean cel-shading" if active_style == "comic_explainer"
+        else "natural light, authentic textures"))
     base = (
         f"{style_desc} of {subject}. "
         f"{lighting_desc}, balanced composition, calm body language, no sensationalism. "
@@ -1255,7 +1322,7 @@ def _finish_rewritten_flow_prompt(prompt: str, original_prompt: str, media_kind:
 
 
 def make_policy_safe_fallback_prompt(
-    original_prompt: str, media_kind: str = "video", rewrite_index: int = 1,
+        original_prompt: str, media_kind: str = "video", rewrite_index: int = 1,
 ) -> str:
     """Create a concise, positive-only alternative if Gemini cannot rewrite a refusal."""
     context = _flow_prompt_core(original_prompt).casefold()
@@ -1294,10 +1361,10 @@ def make_policy_safe_fallback_prompt(
 
 
 def rewrite_flow_prompt_after_policy_refusal(
-    original_prompt: str,
-    refusal_text: str = "",
-    media_kind: str = "video",
-    rewrite_index: int = 1,
+        original_prompt: str,
+        refusal_text: str = "",
+        media_kind: str = "video",
+        rewrite_index: int = 1,
 ) -> str:
     """Ask Gemini to make a genuinely safer prompt, not to circumvent Flow's safeguards."""
     original_core = _flow_prompt_core(original_prompt)
@@ -1332,7 +1399,8 @@ FLOW REFUSAL MESSAGE (diagnostic context only):
 
     rewritten = call_text_api(rewrite_request)
     if rewritten:
-        rewritten = re.sub(r"^(?:revised\s+prompt|rewritten\s+prompt|video\s+prompt|image\s+prompt|prompt)\s*:\s*", "", rewritten.strip(), flags=re.IGNORECASE)
+        rewritten = re.sub(r"^(?:revised\s+prompt|rewritten\s+prompt|video\s+prompt|image\s+prompt|prompt)\s*:\s*", "",
+                           rewritten.strip(), flags=re.IGNORECASE)
         rewritten = rewritten.strip().strip('`').strip().strip('"').strip()
         old_norm = re.sub(r"\s+", " ", original_core).casefold()
         new_norm = re.sub(r"\s+", " ", _flow_prompt_core(rewritten)).casefold()
@@ -1716,11 +1784,11 @@ def _release_proxy(proxy: str | None):
 
 
 def _post_with_transient_retries(
-    url: str,
-    *,
-    retry_limit: int | None = None,
-    read_timeout_attempts: int | None = None,
-    **kwargs,
+        url: str,
+        *,
+        retry_limit: int | None = None,
+        read_timeout_attempts: int | None = None,
+        **kwargs,
 ):
     """Retry transient socket/proxy errors with a caller-specific bounded budget.
 
@@ -1731,16 +1799,17 @@ def _post_with_transient_retries(
     proxy_url = (proxy_map.get("https") or proxy_map.get("http")) if isinstance(proxy_map, dict) else None
     label = _get_proxy_label(proxy_url)
     tries = max(1, int(retry_limit if retry_limit is not None else PROXY_REQUEST_RETRIES))
-    read_tries = max(1, int(read_timeout_attempts if read_timeout_attempts is not None else PROXY_READ_TIMEOUT_ATTEMPTS))
+    read_tries = max(1,
+                     int(read_timeout_attempts if read_timeout_attempts is not None else PROXY_READ_TIMEOUT_ATTEMPTS))
     last_exc = None
     for attempt in range(1, tries + 1):
         try:
             return requests.post(url, **kwargs)
         except (
-            requests.exceptions.ProxyError,
-            requests.exceptions.ConnectTimeout,
-            requests.exceptions.ReadTimeout,
-            requests.exceptions.ConnectionError,
+                requests.exceptions.ProxyError,
+                requests.exceptions.ConnectTimeout,
+                requests.exceptions.ReadTimeout,
+                requests.exceptions.ConnectionError,
         ) as exc:
             last_exc = exc
             allowed_attempts = min(tries, read_tries) if isinstance(exc, requests.exceptions.ReadTimeout) else tries
@@ -1766,7 +1835,8 @@ def _kill_gemini_key(key: str, reason: str, is_temporary: bool = False, cooldown
     else:
         _gemini_dead_keys.add(key)
         alive = len(GEMINI_API_KEYS) - len(_gemini_dead_keys)
-        log.warning(f"[Key Engine] 🚫 Ключ {key_tag} исключен навсегда ({reason}). Живых: {alive}/{len(GEMINI_API_KEYS)}")
+        log.warning(
+            f"[Key Engine] 🚫 Ключ {key_tag} исключен навсегда ({reason}). Живых: {alive}/{len(GEMINI_API_KEYS)}")
 
 
 def _get_next_gemini_key(*, max_wait_seconds: float | None = None) -> str | None:
@@ -1790,7 +1860,9 @@ def _get_next_gemini_key(*, max_wait_seconds: float | None = None) -> str | None
         sleep_sec = max(1, int(next_unlock - now))
 
     if max_wait_seconds is not None and sleep_sec > max(0.0, float(max_wait_seconds)):
-        log.warning("[Key Engine] Все ключи временно заняты/на паузе (%sс до ближайшего). Возвращаю управление без ожидания.", sleep_sec)
+        log.warning(
+            "[Key Engine] Все ключи временно заняты/на паузе (%sс до ближайшего). Возвращаю управление без ожидания.",
+            sleep_sec)
         return None
     if sleep_sec > 45:
         log.warning(f"[Key Engine] ⏳ Ключи на длительном кулдауне ({sleep_sec}с) — отдаём дефолтный шаблон.")
@@ -1833,7 +1905,8 @@ def _record_gemini_model_success(model_name: str, elapsed: float) -> None:
         state["consecutive_failures"] = 0
         old_avg = state.get("avg_latency")
         state["avg_latency"] = float(elapsed) if old_avg is None else (0.70 * float(old_avg) + 0.30 * float(elapsed))
-        state["slow_streak"] = int(state.get("slow_streak", 0)) + 1 if elapsed >= GEMINI_MODEL_SLOW_RESPONSE_SECONDS else 0
+        state["slow_streak"] = int(
+            state.get("slow_streak", 0)) + 1 if elapsed >= GEMINI_MODEL_SLOW_RESPONSE_SECONDS else 0
         state["last_error"] = ""
         state["cooldown_until"] = 0.0
         if int(state["slow_streak"]) >= GEMINI_MODEL_SLOW_STREAK_LIMIT:
@@ -1845,11 +1918,11 @@ def _record_gemini_model_success(model_name: str, elapsed: float) -> None:
 
 
 def _record_gemini_model_failure(
-    model_name: str,
-    reason: str,
-    *,
-    cooldown_seconds: float | None = None,
-    unsupported: bool = False,
+        model_name: str,
+        reason: str,
+        *,
+        cooldown_seconds: float | None = None,
+        unsupported: bool = False,
 ) -> None:
     now = time.time()
     reason_short = re.sub(r"\s+", " ", str(reason or "unknown failure"))[:240]
@@ -1862,7 +1935,8 @@ def _record_gemini_model_failure(
             state["unsupported"] = True
             state["cooldown_until"] = 0.0
         elif cooldown_seconds is not None:
-            state["cooldown_until"] = max(float(state.get("cooldown_until", 0.0)), now + max(1.0, float(cooldown_seconds)))
+            state["cooldown_until"] = max(float(state.get("cooldown_until", 0.0)),
+                                          now + max(1.0, float(cooldown_seconds)))
         elif int(state["consecutive_failures"]) >= GEMINI_MODEL_FAILURE_STREAK_LIMIT:
             state["cooldown_until"] = now + GEMINI_MODEL_FAILURE_COOLDOWN_SECONDS
 
@@ -1916,7 +1990,7 @@ def _ordered_gemini_models_for_call(exclude_models: set[str] | None = None) -> l
         supported = [
             model for model in effective_order
             if not _GEMINI_MODEL_HEALTH.setdefault(model, {}).get("unsupported", False)
-            and model not in excluded
+               and model not in excluded
         ]
         usable = [
             model for model in supported
@@ -1978,7 +2052,9 @@ def call_gemini_api(prompt: str, *, exclude_models: set[str] | None = None) -> s
     for model_name in models:
         remaining = deadline - time.monotonic()
         if remaining < 4.0:
-            log.warning("[Gemini Model Router] Достигнут лимит времени %.0fс на одну операцию; прекращаю перебор моделей.", GEMINI_TEXT_CALL_BUDGET_SECONDS)
+            log.warning(
+                "[Gemini Model Router] Достигнут лимит времени %.0fс на одну операцию; прекращаю перебор моделей.",
+                GEMINI_TEXT_CALL_BUDGET_SECONDS)
             break
 
         # API key restrictions/quota often affect only one key, not the model. On 403/429
@@ -2038,7 +2114,8 @@ def call_gemini_api(prompt: str, *, exclude_models: set[str] | None = None) -> s
                         content = candidates[0].get("content", {}) if isinstance(candidates[0], dict) else {}
                         parts = content.get("parts", []) if isinstance(content, dict) else []
                         if isinstance(parts, list):
-                            result_text = "\n".join(str(part.get("text", "")) for part in parts if isinstance(part, dict) and part.get("text")).strip()
+                            result_text = "\n".join(str(part.get("text", "")) for part in parts if
+                                                    isinstance(part, dict) and part.get("text")).strip()
                     if result_text:
                         _record_gemini_model_success(model_name, elapsed)
                         with _GEMINI_ROUTER_LOCK:
@@ -2054,30 +2131,37 @@ def call_gemini_api(prompt: str, *, exclude_models: set[str] | None = None) -> s
                         )
                         return result_text
                     feedback = data.get("promptFeedback", {}) if isinstance(data, dict) else {}
-                    reason = feedback.get("blockReason", "empty candidates/parts") if isinstance(feedback, dict) else "empty candidates/parts"
+                    reason = feedback.get("blockReason", "empty candidates/parts") if isinstance(feedback,
+                                                                                                 dict) else "empty candidates/parts"
                     _record_gemini_model_failure(model_name, f"empty response: {reason}")
                     last_errors.append(f"{model_name}: empty response ({reason})")
                     break
 
                 if _gemini_model_is_unavailable_response(r.status_code, response_text, model_name):
-                    _record_gemini_model_failure(model_name, f"HTTP {r.status_code}: {response_text[:180]}", unsupported=True)
+                    _record_gemini_model_failure(model_name, f"HTTP {r.status_code}: {response_text[:180]}",
+                                                 unsupported=True)
                     last_errors.append(f"{model_name}: model ID unavailable")
                     break
 
                 if r.status_code == 429:
                     _kill_gemini_key(api_key, "лимит 429", is_temporary=True, cooldown_minutes=5)
                     if key_attempt < 2:
-                        log.warning("[Gemini Text] HTTP 429 на ключе %s для %s; проверяю тот же приоритетный endpoint на другом ключе (%s/2).", key_tag, model_name, key_attempt + 1)
+                        log.warning(
+                            "[Gemini Text] HTTP 429 на ключе %s для %s; проверяю тот же приоритетный endpoint на другом ключе (%s/2).",
+                            key_tag, model_name, key_attempt + 1)
                         continue
-                    _record_gemini_model_failure(model_name, f"HTTP 429 on two keys: {response_text[:180]}", cooldown_seconds=GEMINI_MODEL_RATE_LIMIT_COOLDOWN_SECONDS)
+                    _record_gemini_model_failure(model_name, f"HTTP 429 on two keys: {response_text[:180]}",
+                                                 cooldown_seconds=GEMINI_MODEL_RATE_LIMIT_COOLDOWN_SECONDS)
                     last_errors.append(f"{model_name}: rate limited")
                     break
 
                 if r.status_code == 403:
                     detail = re.sub(r"\s+", " ", response_text)[:220]
-                    _kill_gemini_key(api_key, f"HTTP 403 (API access): {detail}", is_temporary=True, cooldown_minutes=15)
+                    _kill_gemini_key(api_key, f"HTTP 403 (API access): {detail}", is_temporary=True,
+                                     cooldown_minutes=15)
                     if key_attempt < 2:
-                        log.warning("[Gemini Text] HTTP 403 для ключа %s; пробую тот же endpoint %s на другом ключе.", key_tag, model_name)
+                        log.warning("[Gemini Text] HTTP 403 для ключа %s; пробую тот же endpoint %s на другом ключе.",
+                                    key_tag, model_name)
                         continue
                     # No model-level blacklist for a key/project permission error.
                     last_errors.append(f"{model_name}: API key/project permission denied")
@@ -2097,17 +2181,23 @@ def call_gemini_api(prompt: str, *, exclude_models: set[str] | None = None) -> s
 
             except requests.exceptions.ReadTimeout as exc:
                 if proxy:
-                    _put_proxy_on_cooldown(proxy, "Gemini text read timeout; endpoint did not answer inside model budget", duration_sec=PROXY_TIMEOUT_COOLDOWN_SECONDS)
+                    _put_proxy_on_cooldown(proxy,
+                                           "Gemini text read timeout; endpoint did not answer inside model budget",
+                                           duration_sec=PROXY_TIMEOUT_COOLDOWN_SECONDS)
                 _record_gemini_model_failure(
                     model_name, f"ReadTimeout after {time.monotonic() - request_started:.1f}s",
                     cooldown_seconds=GEMINI_MODEL_TIMEOUT_COOLDOWN_SECONDS,
                 )
                 last_errors.append(f"{model_name}: ReadTimeout")
                 break
-            except (requests.exceptions.ConnectTimeout, requests.exceptions.ProxyError, requests.exceptions.ConnectionError) as exc:
+            except (requests.exceptions.ConnectTimeout, requests.exceptions.ProxyError,
+                    requests.exceptions.ConnectionError) as exc:
                 if proxy:
-                    _put_proxy_on_cooldown(proxy, f"{type(exc).__name__} during Gemini text call", duration_sec=PROXY_CONNECT_COOLDOWN_SECONDS)
-                log.warning("[Gemini Text] Сеть/прокси не ответили для %s: %s; перехожу к следующему endpoint без ожидания полной серии повторов.", model_name, type(exc).__name__)
+                    _put_proxy_on_cooldown(proxy, f"{type(exc).__name__} during Gemini text call",
+                                           duration_sec=PROXY_CONNECT_COOLDOWN_SECONDS)
+                log.warning(
+                    "[Gemini Text] Сеть/прокси не ответили для %s: %s; перехожу к следующему endpoint без ожидания полной серии повторов.",
+                    model_name, type(exc).__name__)
                 last_errors.append(f"{model_name}: {type(exc).__name__}")
                 break
             except Exception as exc:
@@ -2160,7 +2250,8 @@ def _get_next_groq_key(*, max_wait_seconds: float | None = 0) -> str | None:
 
         viable = [key for key in GROQ_API_KEYS if key not in _groq_dead_keys]
         if not viable:
-            log.error("[Groq Key Engine] Нет доступных Groq API-ключей: список пуст или все ключи признаны невалидными.")
+            log.error(
+                "[Groq Key Engine] Нет доступных Groq API-ключей: список пуст или все ключи признаны невалидными.")
             return None
         unlocks = [float(_groq_key_cooldowns.get(key, 0.0) or 0.0) for key in viable]
         sleep_seconds = max(1.0, min(unlocks) - now) if unlocks else 1.0
@@ -2178,7 +2269,8 @@ def _cooldown_groq_key(key: str, reason: str, duration_seconds: float, *, perman
         if permanent:
             _groq_dead_keys.add(key)
             _groq_key_cooldowns.pop(key, None)
-            log.error("[Groq Key Engine] Ключ %s исключён как невалидный: %s | активных=%s/%s", tag, reason, len(GROQ_API_KEYS) - len(_groq_dead_keys), len(GROQ_API_KEYS))
+            log.error("[Groq Key Engine] Ключ %s исключён как невалидный: %s | активных=%s/%s", tag, reason,
+                      len(GROQ_API_KEYS) - len(_groq_dead_keys), len(GROQ_API_KEYS))
         else:
             _groq_key_cooldowns[key] = time.time() + max(1.0, float(duration_seconds))
             log.warning("[Groq Key Engine] Ключ %s на паузе %.0fс: %s", tag, duration_seconds, reason)
@@ -2215,7 +2307,8 @@ def call_groq_api(prompt: str, *, proxy_wait_seconds: float = GROQ_FALLBACK_PROX
         for proxy_attempt in range(1, proxy_attempt_budget + 1):
             if time.monotonic() >= deadline:
                 break
-            remaining_proxy_wait = 0.0 if proxy_wait_used else max(0.0, deadline - time.monotonic() - GROQ_TEXT_CALL_BUDGET_SECONDS)
+            remaining_proxy_wait = 0.0 if proxy_wait_used else max(0.0,
+                                                                   deadline - time.monotonic() - GROQ_TEXT_CALL_BUDGET_SECONDS)
             proxy = _acquire_required_proxy(
                 "Groq Text",
                 max_wait_seconds=remaining_proxy_wait,
@@ -2292,7 +2385,8 @@ def call_groq_api(prompt: str, *, proxy_wait_seconds: float = GROQ_FALLBACK_PROX
                     last_errors.append("HTTP 403 access denied")
                     break
                 if response.status_code == 429:
-                    _cooldown_groq_key(key, f"HTTP 429 rate limit: {body_text[:180]}", GROQ_KEY_RATE_LIMIT_COOLDOWN_SECONDS)
+                    _cooldown_groq_key(key, f"HTTP 429 rate limit: {body_text[:180]}",
+                                       GROQ_KEY_RATE_LIMIT_COOLDOWN_SECONDS)
                     last_errors.append("HTTP 429 rate limited")
                     break
                 if response.status_code in {400, 404}:
@@ -2306,7 +2400,8 @@ def call_groq_api(prompt: str, *, proxy_wait_seconds: float = GROQ_FALLBACK_PROX
                     break
                 if response.status_code >= 500:
                     last_errors.append(f"HTTP {response.status_code}")
-                    log.warning("[Groq] Сервер вернул HTTP %s (ключ=%s, proxy=%s); пробую следующий маршрут.", response.status_code, key_tag, proxy_label)
+                    log.warning("[Groq] Сервер вернул HTTP %s (ключ=%s, proxy=%s); пробую следующий маршрут.",
+                                response.status_code, key_tag, proxy_label)
                     if proxy is None:
                         break
                     continue
@@ -2319,15 +2414,19 @@ def call_groq_api(prompt: str, *, proxy_wait_seconds: float = GROQ_FALLBACK_PROX
                 if proxy:
                     _put_proxy_on_cooldown(proxy, "Groq text read timeout", duration_sec=PROXY_TIMEOUT_COOLDOWN_SECONDS)
                 last_errors.append(f"ReadTimeout via {proxy_label}")
-                log.warning("[Groq] ReadTimeout через %s; %s/%s попытка с другим маршрутом.", proxy_label, proxy_attempt, proxy_attempt_budget)
+                log.warning("[Groq] ReadTimeout через %s; %s/%s попытка с другим маршрутом.", proxy_label,
+                            proxy_attempt, proxy_attempt_budget)
                 if proxy is None:
                     break
                 continue
-            except (requests.exceptions.ConnectTimeout, requests.exceptions.ProxyError, requests.exceptions.ConnectionError) as exc:
+            except (requests.exceptions.ConnectTimeout, requests.exceptions.ProxyError,
+                    requests.exceptions.ConnectionError) as exc:
                 if proxy:
-                    _put_proxy_on_cooldown(proxy, f"{type(exc).__name__} during Groq text call", duration_sec=PROXY_CONNECT_COOLDOWN_SECONDS)
+                    _put_proxy_on_cooldown(proxy, f"{type(exc).__name__} during Groq text call",
+                                           duration_sec=PROXY_CONNECT_COOLDOWN_SECONDS)
                 last_errors.append(f"{type(exc).__name__} via {proxy_label}")
-                log.warning("[Groq] Сетевая ошибка через %s: %s; пробую следующий прокси с тем же ключом.", proxy_label, type(exc).__name__)
+                log.warning("[Groq] Сетевая ошибка через %s: %s; пробую следующий прокси с тем же ключом.", proxy_label,
+                            type(exc).__name__)
                 if proxy is None:
                     break
                 continue
@@ -2343,7 +2442,8 @@ def call_groq_api(prompt: str, *, proxy_wait_seconds: float = GROQ_FALLBACK_PROX
 
     log.error(
         "[Groq] Не удалось выполнить текстовый запрос за %.1fс; проверено ключей=%s/%s; ошибки=%s",
-        time.monotonic() - call_started, len(attempted_keys), len(GROQ_API_KEYS), "; ".join(last_errors[-8:]) or "no usable key",
+        time.monotonic() - call_started, len(attempted_keys), len(GROQ_API_KEYS),
+        "; ".join(last_errors[-8:]) or "no usable key",
     )
     return None
 
@@ -2385,7 +2485,8 @@ def call_text_api(prompt: str, *, exclude_models: set[str] | None = None) -> str
     )
     groq_result = call_groq_api(prompt, proxy_wait_seconds=GROQ_FALLBACK_PROXY_WAIT_SECONDS)
     if groq_result and groq_result.strip():
-        log.info("[Text Provider] ✅ Текущая операция выполнена через Groq fallback; выбранный провайдер Gemini не меняется.")
+        log.info(
+            "[Text Provider] ✅ Текущая операция выполнена через Groq fallback; выбранный провайдер Gemini не меняется.")
         return groq_result
     log.error("[Text Provider] Не ответили ни Gemini, ни одноразовый Groq fallback для текущей текстовой операции.")
     return None
@@ -2451,6 +2552,7 @@ def split_text_into_chunks(text: str, max_chunk_size=MAX_AUDIO_CHUNK_SIZE) -> li
 
     return chunks
 
+
 def _audio_frame_hiss_metrics(frame, rate: int) -> tuple[float, float]:
     """Return (RMS, high-frequency power ratio) for a short mono int16 frame."""
     import numpy as np
@@ -2505,7 +2607,8 @@ def _detect_edge_hiss_trim_samples(audio, rate: int) -> tuple[int, int]:
         rms, high_ratio = _audio_frame_hiss_metrics(frame, rate)
         return rms <= rms_threshold and high_ratio >= float(TTS_HISS_HIGH_FREQUENCY_RATIO_MIN)
 
-    max_head_frames = int(math.ceil(TTS_START_HISS_SCAN_MAX_MS / TTS_EDGE_FRAME_MS)) if TTS_START_HISS_SCAN_MAX_MS > 0 else 0
+    max_head_frames = int(
+        math.ceil(TTS_START_HISS_SCAN_MAX_MS / TTS_EDGE_FRAME_MS)) if TTS_START_HISS_SCAN_MAX_MS > 0 else 0
     min_head_frames = max(1, int(math.ceil(TTS_START_HISS_MIN_RUN_MS / TTS_EDGE_FRAME_MS)))
     head_count = 0
     for i in range(min(max_head_frames, len(full_frames))):
@@ -2519,7 +2622,8 @@ def _detect_edge_hiss_trim_samples(audio, rate: int) -> tuple[int, int]:
         keep_samples = int(rate * TTS_START_HISS_KEEP_MS / 1000.0)
         trim_head = max(0, run_samples - keep_samples)
 
-    max_tail_frames = int(math.ceil(TTS_TAIL_HISS_SCAN_MAX_MS / TTS_EDGE_FRAME_MS)) if TTS_TAIL_HISS_SCAN_MAX_MS > 0 else 0
+    max_tail_frames = int(
+        math.ceil(TTS_TAIL_HISS_SCAN_MAX_MS / TTS_EDGE_FRAME_MS)) if TTS_TAIL_HISS_SCAN_MAX_MS > 0 else 0
     min_tail_frames = max(1, int(math.ceil(TTS_TAIL_HISS_MIN_RUN_MS / TTS_EDGE_FRAME_MS)))
     tail_count = 0
     for offset in range(1, min(max_tail_frames, len(full_frames)) + 1):
@@ -2572,10 +2676,10 @@ def _detect_start_click_trim_samples(audio, rate: int) -> int:
     guard_rms = float(np.sqrt(np.mean(guard ** 2)))
 
     isolated_impulse = (
-        first_peak >= max(0.025, speech_reference * TTS_START_CLICK_MIN_REL_PEAK)
-        and first_rms >= max(0.008, speech_reference * 0.05)
-        and following_rms <= max(0.002, speech_reference * TTS_START_CLICK_FOLLOWING_RMS_REL_MAX)
-        and guard_rms <= max(0.004, speech_reference * TTS_START_CLICK_GUARD_RMS_REL_MAX)
+            first_peak >= max(0.025, speech_reference * TTS_START_CLICK_MIN_REL_PEAK)
+            and first_rms >= max(0.008, speech_reference * 0.05)
+            and following_rms <= max(0.002, speech_reference * TTS_START_CLICK_FOLLOWING_RMS_REL_MAX)
+            and guard_rms <= max(0.004, speech_reference * TTS_START_CLICK_GUARD_RMS_REL_MAX)
     )
     return scan_n if isolated_impulse else 0
 
@@ -2625,10 +2729,10 @@ def _detect_detached_terminal_noise_samples(audio, rate: int) -> int:
     def noise_like(row):
         rms, high_ratio, flatness, zcr = row
         return (
-            rms > quiet_threshold
-            and high_ratio >= 0.20
-            and flatness >= 0.16
-            and zcr >= 0.10
+                rms > quiet_threshold
+                and high_ratio >= 0.20
+                and flatness >= 0.16
+                and zcr >= 0.10
         )
 
     scan_start = max(0, frame_count - max_frames)
@@ -2656,9 +2760,9 @@ def _detect_detached_terminal_noise_samples(audio, rate: int) -> int:
     med_flat = float(np.median([row[2] for row in burst_metrics]))
     med_zcr = float(np.median([row[3] for row in burst_metrics]))
     if not (
-        med_hf >= TTS_TAIL_DETACHED_HF_RATIO_MIN
-        and med_flat >= TTS_TAIL_DETACHED_SPECTRAL_FLATNESS_MIN
-        and med_zcr >= TTS_TAIL_DETACHED_ZERO_CROSSING_MIN
+            med_hf >= TTS_TAIL_DETACHED_HF_RATIO_MIN
+            and med_flat >= TTS_TAIL_DETACHED_SPECTRAL_FLATNESS_MIN
+            and med_zcr >= TTS_TAIL_DETACHED_ZERO_CROSSING_MIN
     ):
         return 0
 
@@ -2700,7 +2804,8 @@ def _decode_gemini_tts_audio_payload(audio_bytes: bytes, mime_type: str = "") ->
             samples = np.clip(samples, -32768, 32767).astype(np.int16)
         else:
             samples = samples.astype(np.int16, copy=False)
-        log.debug("[TTS Audio] Decoded WAV container: mime=%s rate=%s channels=%s samples=%s", mime_type, rate, channels, len(samples))
+        log.debug("[TTS Audio] Decoded WAV container: mime=%s rate=%s channels=%s samples=%s", mime_type, rate,
+                  channels, len(samples))
         return samples.astype("<i2", copy=False).tobytes(), 1, rate, 2
 
     # Legacy/headerless response is raw 16-bit signed little-endian PCM.
@@ -2755,18 +2860,19 @@ def _tts_speech_quality(pcm_data: bytes, rate: int = 24000, sample_width: int = 
     max_silence_s = float(longest_frames * frame_n / float(rate))
 
     ok = (
-        duration >= 0.8
-        and peak >= 600.0
-        and p95 >= 120.0
-        and overall_rms >= 80.0
-        and active_ratio >= TTS_MIN_ACTIVE_RATIO
-        and max_silence_s <= TTS_MAX_CONTIGUOUS_SILENCE_S
+            duration >= 0.8
+            and peak >= 600.0
+            and p95 >= 120.0
+            and overall_rms >= 80.0
+            and active_ratio >= TTS_MIN_ACTIVE_RATIO
+            and max_silence_s <= TTS_MAX_CONTIGUOUS_SILENCE_S
     )
     return {
         "ok": bool(ok), "duration": duration, "rms": overall_rms,
         "p95_frame_rms": p95, "active_ratio": active_ratio, "peak": peak,
         "max_silence_s": max_silence_s,
     }
+
 
 def save_wav(filename: Path, pcm_data: bytes, channels=1, rate=24000, sample_width=2, target_rms=0.15):
     """Save Gemini TTS PCM, trimming only detected edge hiss and preserving speech.
@@ -2992,9 +3098,11 @@ def text_to_speech_gemini(text: str, out_file: Path, chunk_id: int, total_chunks
                 encoded_audio = base64.b64decode(inline_data["data"])
                 mime_type = str(inline_data.get("mimeType", "unknown"))
                 try:
-                    pcm_bytes, pcm_channels, pcm_rate, pcm_width = _decode_gemini_tts_audio_payload(encoded_audio, mime_type)
+                    pcm_bytes, pcm_channels, pcm_rate, pcm_width = _decode_gemini_tts_audio_payload(encoded_audio,
+                                                                                                    mime_type)
                 except Exception as decode_exc:
-                    log.warning("[TTS Audio] Could not decode TTS payload (%s): %s; retrying with another request.", mime_type, decode_exc)
+                    log.warning("[TTS Audio] Could not decode TTS payload (%s): %s; retrying with another request.",
+                                mime_type, decode_exc)
                     continue
 
                 metrics = _tts_speech_quality(pcm_bytes, pcm_rate, pcm_width)
@@ -3030,8 +3138,8 @@ def text_to_speech_gemini(text: str, out_file: Path, chunk_id: int, total_chunks
                 # Duration alone is not enough: the waveform must contain meaningful voice activity.
                 minimum_duration = max(0.8, len(spoken_words) * 0.18)
                 if (
-                    actual_duration is None
-                    or (len(spoken_words) >= 12 and actual_duration < minimum_duration)
+                        actual_duration is None
+                        or (len(spoken_words) >= 12 and actual_duration < minimum_duration)
                 ):
                     log.warning(
                         "⚠️ [TTS] Чанк %s/%s подозрительно короткий: %.2fs при %s словах "
@@ -3252,12 +3360,14 @@ def master_voice_audio(input_wav: Path, output_wav: Path) -> bool:
     ap1, ap2 = random.uniform(600.0, 950.0), random.uniform(2100.0, 2900.0)
     eq1, eq2 = random.uniform(-0.8, 0.8), random.uniform(-0.8, 0.8)
     chain = (f"aresample=44100,asetrate=44100*{pitch:.5f},aresample=44100,atempo={tempo / pitch:.5f},"
-        "highpass=f=65,lowpass=f=15000,"
-        f"allpass=f={ap1:.1f}:width_type=q:w=1.0,allpass=f={ap2:.1f}:width_type=q:w=1.0,"
-        f"equalizer=f=350:t=q:w=1.0:g={eq1:.3f},equalizer=f=3200:t=q:w=1.0:g={eq2:.3f},"
-        "acompressor=threshold=0.12:ratio=2.0:attack=20:release=250:makeup=1.0:knee=2.0:detection=rms,loudnorm=I=-16:TP=-1.5:LRA=4.5")
+             "highpass=f=65,lowpass=f=15000,"
+             f"allpass=f={ap1:.1f}:width_type=q:w=1.0,allpass=f={ap2:.1f}:width_type=q:w=1.0,"
+             f"equalizer=f=350:t=q:w=1.0:g={eq1:.3f},equalizer=f=3200:t=q:w=1.0:g={eq2:.3f},"
+             "acompressor=threshold=0.12:ratio=2.0:attack=20:release=250:makeup=1.0:knee=2.0:detection=rms,loudnorm=I=-16:TP=-1.5:LRA=4.5")
     fc = f"[0:a]{chain}[voice];anoisesrc=color=pink:sample_rate=44100:amplitude=0.0007[room];[voice][room]amix=inputs=2:duration=first:normalize=0:dropout_transition=0[mix]"
-    cmd = [FFMPEG_BIN, "-y", "-i", str(input_wav), "-filter_complex", fc, "-map", "[mix]", "-vn", "-ar", "44100", "-ac", "1", "-c:a", "pcm_s16le", "-map_metadata", "-1", "-fflags", "+bitexact", "-flags:a", "+bitexact", str(temp_output)]
+    cmd = [FFMPEG_BIN, "-y", "-i", str(input_wav), "-filter_complex", fc, "-map", "[mix]", "-vn", "-ar", "44100", "-ac",
+           "1", "-c:a", "pcm_s16le", "-map_metadata", "-1", "-fflags", "+bitexact", "-flags:a", "+bitexact",
+           str(temp_output)]
     try:
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=900)
         if not is_valid_audio(temp_output):
@@ -3341,10 +3451,10 @@ def generate_audio_gemini_sync(text: str, temp_dir: Path, output_file: Path) -> 
 # ==============================================================================
 
 def transcribe_audio(
-    audio_file: Path,
-    subtitle_file: Path,
-    segments_json: Path,
-    lang_code: str,
+        audio_file: Path,
+        subtitle_file: Path,
+        segments_json: Path,
+        lang_code: str,
 ) -> list[dict[str, Any]]:
     import stable_whisper
 
@@ -3407,6 +3517,7 @@ def transcribe_audio(
     log.info("✅ [Whisper] Готов за %.1fs", time.time() - started)
     return segment_data
 
+
 def load_segments(path: Path) -> list[dict[str, Any]]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -3426,6 +3537,7 @@ def audit_narration_coverage(expected_text: str, recognized_text: str, report_pa
     never blocks rendering. It helps distinguish true TTS omissions from normal
     transcription differences.
     """
+
     def tokens(value: str) -> list[str]:
         return re.findall(r"[^\W_]+", (value or "").casefold(), flags=re.UNICODE)
 
@@ -3478,9 +3590,9 @@ def audit_narration_coverage(expected_text: str, recognized_text: str, report_pa
 
 
 def get_text_for_timeslot(
-    segments: list[dict[str, Any]],
-    start_time: float,
-    end_time: float,
+        segments: list[dict[str, Any]],
+        start_time: float,
+        end_time: float,
 ) -> str:
     words: list[str] = []
 
@@ -3537,7 +3649,6 @@ TEXT:
         return json.loads(match.group(0)) if match else {}
     except Exception:
         return {}
-
 
 
 def analyze_context(transcription: str) -> dict[str, Any]:
@@ -3661,7 +3772,8 @@ STORY:
             if isinstance(raw_aliases, str):
                 raw_aliases = re.split(r"[;|,]", raw_aliases)
             aliases: list[str] = []
-            for alias in [name, str(entry.get("id", "")), str(entry.get("id", "")).replace("_", " "), *(raw_aliases if isinstance(raw_aliases, list) else [])]:
+            for alias in [name, str(entry.get("id", "")), str(entry.get("id", "")).replace("_", " "),
+                          *(raw_aliases if isinstance(raw_aliases, list) else [])]:
                 alias = re.sub(r"\s+", " ", str(alias or "")).strip().strip("-• ")
                 if alias and alias.casefold() not in {x.casefold() for x in aliases}:
                     aliases.append(alias)
@@ -3726,7 +3838,7 @@ CHANNEL_HERO_SKIN_LOCK_END = "ABSOLUTE CHANNEL HERO SKIN COLOUR LOCK END"
 
 
 def append_channel_hero_skin_lock(
-    prompt: str, hero_entry: dict[str, Any] | None, media_kind: str = "image"
+        prompt: str, hero_entry: dict[str, Any] | None, media_kind: str = "image"
 ) -> str:
     """Append a strong, channel-specific neutral-white skin rule for the attached hero only.
 
@@ -3779,26 +3891,28 @@ def character_bible_prompt_map(bible: dict[str, Any], fallback: dict[str, Any] |
             if isinstance(raw_aliases, str):
                 raw_aliases = re.split(r"[;|,]", raw_aliases)
             aliases: list[str] = []
-            for alias in [name, str(entry.get("id", "")), str(entry.get("id", "")).replace("_", " "), *(raw_aliases if isinstance(raw_aliases, list) else [])]:
+            for alias in [name, str(entry.get("id", "")), str(entry.get("id", "")).replace("_", " "),
+                          *(raw_aliases if isinstance(raw_aliases, list) else [])]:
                 alias = re.sub(r"\s+", " ", str(alias or "")).strip().strip("-• ")
                 if alias and alias.casefold() not in {a.casefold() for a in aliases}:
                     aliases.append(alias)
             _CHARACTER_ALIAS_INDEX[name] = aliases[:12]
             if entry.get("channel_reference_locked"):
                 skin_override = str(entry.get("channel_skin_tone_override", "") or "").strip()
-                skin_rule = (" CHANNEL-SPECIFIC ABSOLUTE SKIN COLOUR LOCK: neutral near-white porcelain/ivory base #F7F5F2 on face, ears, neck, arms and hands; low saturation, neutral light-grey shadows only; no blue/cyan/teal/violet/purple or peach/beige/tan/brown colour cast from lighting. The skin remains white regardless of environment lighting. " + skin_override) if skin_override else ""
+                skin_rule = (
+                            " CHANNEL-SPECIFIC ABSOLUTE SKIN COLOUR LOCK: neutral near-white porcelain/ivory base #F7F5F2 on face, ears, neck, arms and hands; low saturation, neutral light-grey shadows only; no blue/cyan/teal/violet/purple or peach/beige/tan/brown colour cast from lighting. The skin remains white regardless of environment lighting. " + skin_override) if skin_override else ""
                 result[name] = (
-                    f"CANONICAL CHARACTER ID {entry.get('id', name)}; narrative role={entry.get('narrative_role', 'protagonist')}; "
-                    f"story age/stage={entry.get('age_or_stage', 'not specified')}. "
-                    "CHANNEL ETALON IDENTITY LOCK: the attached image from the channel's etalon folder is the authoritative source for "
-                    "this protagonist's face/head geometry, skin tone, hair, eyes, apparent age, proportions, and distinguishing features. "
-                    "If inferred written appearance details conflict with the attached image, follow the image. Do not replace this identity with a side character."
-                    + skin_rule + " "
-                    "WARDROBE BASELINE LOCK FOR THIS PROJECT: the clothing and accessories visibly present in the selected channel etalon image define this protagonist's default outfit for this entire project. The attached image, not the story's generic wardrobe prose, is the source of truth. "
-                    "If narration or a generated scene prompt repeats a habitual uniform or equipment description that conflicts with the selected etalon, treat it as background biography and ignore the conflicting outfit detail for this shot. Do not silently revert to previously used clothes. "
-                    "Only change clothes when THIS specific scene explicitly depicts a clothing change, a clearly different outfit, a formal occasion, or a meaningful time/weather/location/activity change; do not treat repeated descriptions of the usual uniform as a change event. "
-                    "Keep the chosen outfit stable across adjacent shots of the same event. Do not add a polo, screwdriver, cap, logo, tool or other accessory unless it appears in the selected etalon or this scene clearly requires it. "
-                    "The face and identity traits remain fixed regardless of wardrobe. The reference is not permission to show the protagonist in every scene; only show the character when the scene cast decision explicitly includes them."
+                        f"CANONICAL CHARACTER ID {entry.get('id', name)}; narrative role={entry.get('narrative_role', 'protagonist')}; "
+                        f"story age/stage={entry.get('age_or_stage', 'not specified')}. "
+                        "CHANNEL ETALON IDENTITY LOCK: the attached image from the channel's etalon folder is the authoritative source for "
+                        "this protagonist's face/head geometry, skin tone, hair, eyes, apparent age, proportions, and distinguishing features. "
+                        "If inferred written appearance details conflict with the attached image, follow the image. Do not replace this identity with a side character."
+                        + skin_rule + " "
+                                      "WARDROBE BASELINE LOCK FOR THIS PROJECT: the clothing and accessories visibly present in the selected channel etalon image define this protagonist's default outfit for this entire project. The attached image, not the story's generic wardrobe prose, is the source of truth. "
+                                      "If narration or a generated scene prompt repeats a habitual uniform or equipment description that conflicts with the selected etalon, treat it as background biography and ignore the conflicting outfit detail for this shot. Do not silently revert to previously used clothes. "
+                                      "Only change clothes when THIS specific scene explicitly depicts a clothing change, a clearly different outfit, a formal occasion, or a meaningful time/weather/location/activity change; do not treat repeated descriptions of the usual uniform as a change event. "
+                                      "Keep the chosen outfit stable across adjacent shots of the same event. Do not add a polo, screwdriver, cap, logo, tool or other accessory unless it appears in the selected etalon or this scene clearly requires it. "
+                                      "The face and identity traits remain fixed regardless of wardrobe. The reference is not permission to show the protagonist in every scene; only show the character when the scene cast decision explicitly includes them."
                 )
             else:
                 result[name] = (
@@ -3825,10 +3939,8 @@ def character_bible_prompt_map(bible: dict[str, Any], fallback: dict[str, Any] |
     return result
 
 
-
-
 def _character_alias_candidates(
-    entry: dict[str, Any], all_entries: list[dict[str, Any]] | None = None
+        entry: dict[str, Any], all_entries: list[dict[str, Any]] | None = None
 ) -> list[str]:
     """Names and stable IDs used in scene prompts; exclude generic role words."""
     raw: list[str] = []
@@ -3910,14 +4022,14 @@ def _alias_count(text: str, alias: str) -> int:
 
 
 def _character_mention_count(
-    text: str, entry: dict[str, Any], all_entries: list[dict[str, Any]] | None = None
+        text: str, entry: dict[str, Any], all_entries: list[dict[str, Any]] | None = None
 ) -> int:
     """Count mentions using names, stable IDs, aliases, and Russian name inflections."""
     return max((_alias_count(text, alias) for alias in _character_alias_candidates(entry, all_entries)), default=0)
 
 
 def select_primary_reference_characters(
-    bible: dict[str, Any], story_text: str = "", limit: int = MAX_PRIMARY_CHARACTER_REFERENCES
+        bible: dict[str, Any], story_text: str = "", limit: int = MAX_PRIMARY_CHARACTER_REFERENCES
 ) -> list[dict[str, Any]]:
     """Choose the most important recurring cast, balancing explicit priority and actual recurrence."""
     entries = bible.get("characters", []) if isinstance(bible, dict) else []
@@ -3934,9 +4046,9 @@ def select_primary_reference_characters(
         # Explicit primary status helps, but cannot automatically push a frequently
         # recurring child/companion below a lightly mentioned side character.
         if not is_primary and count < (1 if not any(
-            str(c.get("visual_reference_priority", "")).strip().casefold()
-            in {"primary", "main", "protagonist", "главный", "главная", "главные"}
-            for c in characters
+                str(c.get("visual_reference_priority", "")).strip().casefold()
+                in {"primary", "main", "protagonist", "главный", "главная", "главные"}
+                for c in characters
         ) else 2):
             continue
         score = float(count) + (1.0 if is_primary else 0.0)
@@ -3945,6 +4057,7 @@ def select_primary_reference_characters(
     ranked.sort(key=lambda row: (row[0], row[1], row[2]), reverse=True)
     selected = [row[3] for row in ranked[:cap]]
     return selected
+
 
 def character_reference_prompt(entry: dict[str, Any], setting_context: dict[str, Any] | None = None) -> str:
     """Create a single-subject, neutral reference portrait prompt from the locked bible."""
@@ -3958,7 +4071,8 @@ def character_reference_prompt(entry: dict[str, Any], setting_context: dict[str,
             ("eyes", "eyes"), ("build_or_body", "build/body"),
             ("distinctive_features", "permanent distinctive features"),
         )
-        if str(entry.get(key, "")).strip() and str(entry.get(key, "")).strip().casefold() not in {"not specified", "not applicable"}
+        if str(entry.get(key, "")).strip() and str(entry.get(key, "")).strip().casefold() not in {"not specified",
+                                                                                                  "not applicable"}
     )
     era = str((setting_context or {}).get("time_period", "the story's authentic time period"))
     setting = str((setting_context or {}).get("setting", "a simple neutral studio background"))
@@ -3999,7 +4113,8 @@ def strip_character_identity_lock_sections(prompt: str) -> str:
         if start < 0:
             break
         lowered = text.casefold()
-        ends = [lowered.find(label.casefold(), start + len("canonical character identity lock")) for label in terminators]
+        ends = [lowered.find(label.casefold(), start + len("canonical character identity lock")) for label in
+                terminators]
         ends = [position for position in ends if position >= 0]
         if ends:
             end = min(ends)
@@ -4044,7 +4159,8 @@ def _is_detail_only_scene(text: str) -> bool:
     or head is visible. Full person shots and face portraits remain eligible.
     """
     value = _scene_subject_text(text).casefold()
-    tight = re.search(r"\b(macro|close[- ]?up|extreme close|tight close|detail shot|крупн(?:ый|ого|ом) план|макросъ[её]мк)\b", value)
+    tight = re.search(
+        r"\b(macro|close[- ]?up|extreme close|tight close|detail shot|крупн(?:ый|ого|ом) план|макросъ[её]мк)\b", value)
     detail_subject = re.search(
         r"\b(hands?|fingers?|palms?|wrists?|fabric|cloth|weave|fibers?|stitches?|needle|coins?|sewing machine|gears?|treadle|wooden wall|planks?|sign|hands? holding|рук(?:а|и|у|ой|ами)|пальц(?:ы|ев|ами)|ткань|шов|игл(?:а|ы|у|ой)|монет(?:а|ы|у|ами)|шестерн(?:я|и|ей)|педаль|дос(?:ка|ки|ок)|вывеск(?:а|и|у))\b",
         value,
@@ -4053,7 +4169,9 @@ def _is_detail_only_scene(text: str) -> bool:
         r"\b(face|faces|portrait|head and shoulders|visible face|eyes visible|full face|facial features|лицо|лица|портрет|голова и плечи|видны глаза)\b",
         value,
     )
-    full_subject = re.search(r"\b(standing|stands|sitting|sits|walking|walks|full[- ]body|medium shot|wide shot|whole person|в полный рост|стоит|сидит|ид[её]т)\b", value)
+    full_subject = re.search(
+        r"\b(standing|stands|sitting|sits|walking|walks|full[- ]body|medium shot|wide shot|whole person|в полный рост|стоит|сидит|ид[её]т)\b",
+        value)
     return bool(tight and detail_subject and not face_visible and not full_subject)
 
 
@@ -4062,7 +4180,7 @@ def _text_mentions_character(text: str, entry: dict[str, Any]) -> bool:
 
 
 def find_channel_hero_reference(
-    project_folder: Path, preferred_path: str | Path | None = None
+        project_folder: Path, preferred_path: str | Path | None = None
 ) -> Path | None:
     """Choose one etalon image for this project; reuse the saved pick on resumes.
 
@@ -4077,7 +4195,8 @@ def find_channel_hero_reference(
     candidates: list[Path] = []
     try:
         for candidate in etalon_dir.iterdir():
-            if candidate.is_file() and candidate.suffix.casefold() in SUPPORTED_REFERENCE_IMAGE_SUFFIXES and is_valid_image(candidate):
+            if candidate.is_file() and candidate.suffix.casefold() in SUPPORTED_REFERENCE_IMAGE_SUFFIXES and is_valid_image(
+                    candidate):
                 candidates.append(candidate.resolve())
     except OSError as exc:
         log.warning("[Hero Etalon] Не удалось прочитать %s: %s", etalon_dir, exc)
@@ -4111,10 +4230,10 @@ def find_channel_hero_reference(
 
 
 def apply_channel_hero_reference_to_bible(
-    bible: dict[str, Any],
-    story_text: str,
-    project_folder: Path,
-    fallback_characters: dict[str, Any] | None = None,
+        bible: dict[str, Any],
+        story_text: str,
+        project_folder: Path,
+        fallback_characters: dict[str, Any] | None = None,
 ) -> Path | None:
     """Bind one channel-level image to the story's single central protagonist.
 
@@ -4155,7 +4274,8 @@ def apply_channel_hero_reference_to_bible(
             if not isinstance(entry, dict) or not entry.get("channel_reference_locked"):
                 continue
             old_path = str(entry.get("reference_image_path", ""))
-            if old_path and Path(old_path).name.casefold() == (Path(old_path).parent / Path(old_path).name).name.casefold():
+            if old_path and Path(old_path).name.casefold() == (
+                    Path(old_path).parent / Path(old_path).name).name.casefold():
                 # Only remove the channel lock/path when it points into a channel etalon directory.
                 try:
                     old_resolved = Path(old_path).resolve()
@@ -4171,7 +4291,7 @@ def apply_channel_hero_reference_to_bible(
     if not entries and isinstance(fallback_characters, dict):
         for index, (name, description) in enumerate(list(fallback_characters.items())[:8]):
             entries.append({
-                "id": re.sub(r"[^A-Z0-9]+", "_", str(name).upper()).strip("_") or f"CHARACTER_{index+1}",
+                "id": re.sub(r"[^A-Z0-9]+", "_", str(name).upper()).strip("_") or f"CHARACTER_{index + 1}",
                 "name": str(name).strip(),
                 "aliases": [str(name).strip()],
                 "kind": "human",
@@ -4209,7 +4329,8 @@ def apply_channel_hero_reference_to_bible(
             "continuity_lock": "The story's central narrator/protagonist, with appearance anchored to the channel etalon.",
         })
 
-    role_keys = {"protagonist", "narrator", "main character", "central character", "lead", "главный герой", "главная героиня", "рассказчик"}
+    role_keys = {"protagonist", "narrator", "main character", "central character", "lead", "главный герой",
+                 "главная героиня", "рассказчик"}
     protagonist_candidates = []
     for index, entry in enumerate(entries):
         if not isinstance(entry, dict):
@@ -4259,7 +4380,8 @@ def apply_channel_hero_reference_to_bible(
     if skin_override:
         chosen["channel_skin_tone_override"] = skin_override
         chosen["skin_tone_or_coat"] = skin_override
-        log.info("[Hero Etalon] Применён локальный skin override для канала %s; на другие каналы он не влияет.", channel_name)
+        log.info("[Hero Etalon] Применён локальный skin override для канала %s; на другие каналы он не влияет.",
+                 channel_name)
     else:
         chosen.pop("channel_skin_tone_override", None)
     try:
@@ -4322,7 +4444,8 @@ def references_for_scene(bible: dict[str, Any], *context_texts: str) -> list[Pat
     detail_only = _is_detail_only_scene(combined)
     if cast_mode == "SUPPORTING":
         # Supporting-only shot is never allowed to inherit the channel hero reference.
-        entries = [entry for entry in entries if not (isinstance(entry, dict) and entry.get("channel_reference_locked"))]
+        entries = [entry for entry in entries if
+                   not (isinstance(entry, dict) and entry.get("channel_reference_locked"))]
     for entry in entries:
         if not isinstance(entry, dict):
             continue
@@ -4352,7 +4475,7 @@ def references_for_scene(bible: dict[str, Any], *context_texts: str) -> list[Pat
 
 
 def add_reference_usage_instruction(
-    prompt: str, bible: dict[str, Any], image_paths: list[Path] | None
+        prompt: str, bible: dict[str, Any], image_paths: list[Path] | None
 ) -> str:
     """Rebuild only visible characters' text locks and map ordered attachments to distinct identities."""
     base = strip_character_identity_lock_sections(prompt or "")
@@ -4385,13 +4508,13 @@ def add_reference_usage_instruction(
             names.append(name)
         traits = []
         for key, label in (
-            ("age_or_stage", "age"),
-            ("face_or_head", "face"),
-            ("skin_tone_or_coat", "skin/coat"),
-            ("hair_or_mane", "hair/mane"),
-            ("eyes", "eyes"),
-            ("build_or_body", "build"),
-            ("distinctive_features", "distinctive features"),
+                ("age_or_stage", "age"),
+                ("face_or_head", "face"),
+                ("skin_tone_or_coat", "skin/coat"),
+                ("hair_or_mane", "hair/mane"),
+                ("eyes", "eyes"),
+                ("build_or_body", "build"),
+                ("distinctive_features", "distinctive features"),
         ):
             value = str(entry.get(key, "")).strip()
             if value and value.casefold() not in {"not specified", "not applicable", "unknown"}:
@@ -4402,15 +4525,17 @@ def add_reference_usage_instruction(
             legacy_wardrobe = str(entry.get("wardrobe_or_equipment", "") or "").strip()
             legacy_wardrobe_rule = (
                 f" The story bible's usual outfit/equipment text is only narrative background and must be ignored wherever it conflicts with the selected image: {legacy_wardrobe}."
-                if legacy_wardrobe and legacy_wardrobe.casefold() not in {"not specified", "not applicable", "unknown"} else ""
+                if legacy_wardrobe and legacy_wardrobe.casefold() not in {"not specified", "not applicable",
+                                                                          "unknown"} else ""
             )
-            detail = ("the channel etalon image is the authoritative source for this protagonist's face, head shape, skin tone, hair, eyes, "
-                      "apparent age, proportions, and defining features. The visible clothing and accessories in the selected etalon are the DEFAULT WARDROBE for this entire project. "
-                      "The attached image overrides repeated/generic clothing prose in the story bible, narration and generated scene prompt; do not revert to a usual uniform when it conflicts with this image. "
-                      "Only the current scene's explicit outfit-change event or a clearly different story context can override the default. Keep clothes stable in adjacent shots of the same event."
-                      + legacy_wardrobe_rule
-                      + " Use this protagonist only because the current storyboard CAST marker explicitly includes them; do not add them to object or environment shots."
-                      + skin_rule)
+            detail = (
+                        "the channel etalon image is the authoritative source for this protagonist's face, head shape, skin tone, hair, eyes, "
+                        "apparent age, proportions, and defining features. The visible clothing and accessories in the selected etalon are the DEFAULT WARDROBE for this entire project. "
+                        "The attached image overrides repeated/generic clothing prose in the story bible, narration and generated scene prompt; do not revert to a usual uniform when it conflicts with this image. "
+                        "Only the current scene's explicit outfit-change event or a clearly different story context can override the default. Keep clothes stable in adjacent shots of the same event."
+                        + legacy_wardrobe_rule
+                        + " Use this protagonist only because the current storyboard CAST marker explicitly includes them; do not add them to object or environment shots."
+                        + skin_rule)
         else:
             detail = "; ".join(traits) if traits else str(entry.get("continuity_lock", "stable canonical appearance"))
         kind = "animal" if str(entry.get("kind", "human")).casefold() == "animal" else "person"
@@ -4420,30 +4545,31 @@ def add_reference_usage_instruction(
         )
 
     instruction = (
-        "CANONICAL VISUAL REFERENCE MAP — attachment order is the order listed below.\n"
-        + "\n".join(mappings)
-        + "\n\nEach attached image is a different, exclusive character identity. If two or more mapped characters appear in the same shot, "
-          "show them as separate individuals and match each identity only to its own reference; never swap, merge, average, or duplicate their faces. "
-          "Use these references only for characters who are explicitly visible in the current scene description. An object-only or environment-only "
-          "shot must remain object-only/environment-only even when character references are available. The scene prompt controls action, composition, and setting. "
-          "For the channel-locked protagonist, the selected etalon outfit is the project's default. The image wins over conflicting wardrobe descriptions generated from the story; do not redraw a repeatedly mentioned uniform or accessory when the selected etalon shows different clothing. Only a clear outfit change depicted in this exact scene may override it. "
-          "The image controls stable identity and default wardrobe; do not force clothing/accessories from unrelated earlier descriptions. Do not substitute newly designed faces for the mapped characters."
+            "CANONICAL VISUAL REFERENCE MAP — attachment order is the order listed below.\n"
+            + "\n".join(mappings)
+            + "\n\nEach attached image is a different, exclusive character identity. If two or more mapped characters appear in the same shot, "
+              "show them as separate individuals and match each identity only to its own reference; never swap, merge, average, or duplicate their faces. "
+              "Use these references only for characters who are explicitly visible in the current scene description. An object-only or environment-only "
+              "shot must remain object-only/environment-only even when character references are available. The scene prompt controls action, composition, and setting. "
+              "For the channel-locked protagonist, the selected etalon outfit is the project's default. The image wins over conflicting wardrobe descriptions generated from the story; do not redraw a repeatedly mentioned uniform or accessory when the selected etalon shows different clothing. Only a clear outfit change depicted in this exact scene may override it. "
+              "The image controls stable identity and default wardrobe; do not force clothing/accessories from unrelated earlier descriptions. Do not substitute newly designed faces for the mapped characters."
     )
     result = base + "\n\n" + instruction
     # Apply the channel-only skin colour lock at the final prompt boundary, after style/identity text.
     for path_key in wanted_paths:
         entry = entry_by_path.get(path_key, {})
-        if isinstance(entry, dict) and entry.get("channel_reference_locked") and entry.get("channel_skin_tone_override"):
+        if isinstance(entry, dict) and entry.get("channel_reference_locked") and entry.get(
+                "channel_skin_tone_override"):
             result = append_channel_hero_skin_lock(result, entry, "image")
             break
     return result
 
 
 def append_relevant_character_locks(
-    prompt: str,
-    character_map: dict[str, Any] | None,
-    *context_texts: str,
-    max_characters: int = MAX_PRIMARY_CHARACTER_REFERENCES,
+        prompt: str,
+        character_map: dict[str, Any] | None,
+        *context_texts: str,
+        max_characters: int = MAX_PRIMARY_CHARACTER_REFERENCES,
 ) -> str:
     """Append canonical continuity constraints for only the characters relevant to this shot.
 
@@ -4507,7 +4633,6 @@ def append_relevant_character_locks(
     return (prompt or "").strip() + "\n\n" + "\n".join(lines)
 
 
-
 # Stage 3 planning constants
 INTRO_MIN_CLIPS = 8
 INTRO_MAX_CLIPS = 11
@@ -4519,160 +4644,185 @@ MAIN_VIDEO_INSERT_MIN_DUR = 7.2
 MAIN_VIDEO_INSERT_MAX_DUR = 9.2
 MAIN_VIDEO_INSERT_TARGET_DUR = 8.0
 
+
 def plan_floating_intro(segments, audio_duration):
     """Choose N and the exact opening endpoint from Whisper sentence/pause boundaries."""
-    duration=max(0.0,float(audio_duration or 0.0))
-    if duration<INTRO_SHORT_VIDEO_THRESHOLD_SEC:
-        upper=max(INTRO_SHORT_MIN_CLIPS,min(INTRO_MIN_CLIPS,int((duration*INTRO_SHORT_VIDEO_MAX_SHARE)//8.0)))
-        lower=INTRO_SHORT_MIN_CLIPS
+    duration = max(0.0, float(audio_duration or 0.0))
+    if duration < INTRO_SHORT_VIDEO_THRESHOLD_SEC:
+        upper = max(INTRO_SHORT_MIN_CLIPS, min(INTRO_MIN_CLIPS, int((duration * INTRO_SHORT_VIDEO_MAX_SHARE) // 8.0)))
+        lower = INTRO_SHORT_MIN_CLIPS
     else:
-        lower,upper=INTRO_MIN_CLIPS,INTRO_MAX_CLIPS
+        lower, upper = INTRO_MIN_CLIPS, INTRO_MAX_CLIPS
     # Five clips need at least four 8s windows plus a 6.8s final window.
-    physically_possible=max(1,int(max(0.0,duration-6.8)//8.0)+1)
-    upper=min(upper,physically_possible)
-    lower=min(lower,upper)
-    words=[]
+    physically_possible = max(1, int(max(0.0, duration - 6.8) // 8.0) + 1)
+    upper = min(upper, physically_possible)
+    lower = min(lower, upper)
+    words = []
     for segment in segments or []:
-        if not isinstance(segment,dict): continue
+        if not isinstance(segment, dict): continue
         for word in (segment.get("words") or [segment]):
             try:
-                start=float(word.get("start",segment.get("start",0.0)))
-                end=float(word.get("end",segment.get("end",0.0)))
-                token=str(word.get("word",word.get("text","")))
-                if end>start: words.append((start,end,token))
-            except Exception: pass
+                start = float(word.get("start", segment.get("start", 0.0)))
+                end = float(word.get("end", segment.get("end", 0.0)))
+                token = str(word.get("word", word.get("text", "")))
+                if end > start: words.append((start, end, token))
+            except Exception:
+                pass
     words.sort()
-    boundaries=[]
-    for index,(_,end,token) in enumerate(words):
-        next_start=words[index+1][0] if index+1<len(words) else duration
-        pause=max(0.0,next_start-end)
-        if re.search(r"[.!?…][\"'”’»)]*$",token) or pause>=0.35:
-            boundaries.append(min(duration,end+pause*0.5))
-    options=[]
-    for count in range(lower,upper+1):
-        low=8.0*(count-1)+6.8
-        high=min(duration,8.0*(count-1)+9.0)
-        valid=[x for x in boundaries if low<=x<=high]
+    boundaries = []
+    for index, (_, end, token) in enumerate(words):
+        next_start = words[index + 1][0] if index + 1 < len(words) else duration
+        pause = max(0.0, next_start - end)
+        if re.search(r"[.!?…][\"'”’»)]*$", token) or pause >= 0.35:
+            boundaries.append(min(duration, end + pause * 0.5))
+    options = []
+    for count in range(lower, upper + 1):
+        low = 8.0 * (count - 1) + 6.8
+        high = min(duration, 8.0 * (count - 1) + 9.0)
+        valid = [x for x in boundaries if low <= x <= high]
         if valid:
-            best=min(valid,key=lambda x:abs(x-count*8.0))
-            options.append((abs(best-count*8.0),count,best))
+            best = min(valid, key=lambda x: abs(x - count * 8.0))
+            options.append((abs(best - count * 8.0), count, best))
     if options:
-        _,count,intro_end=min(options,key=lambda x:(x[0],x[1]))
+        _, count, intro_end = min(options, key=lambda x: (x[0], x[1]))
     else:
-        count=max(1,min(upper,round(duration/64.0*8.0)))
-        intro_end=min(duration,8.0*count)
-        if intro_end<8.0*(count-1)+6.8 and count>1:
-            count=max(1,min(count,int((duration-6.8)//8.0)+1))
-            intro_end=min(duration,8.0*count)
-    intro_end=round(max(0.0,intro_end),3)
-    durations=[8.0]*max(0,count-1)
-    durations.append(round(intro_end-sum(durations),3))
-    if durations[-1]<6.8 and count>1:
-        shift=round(6.8-durations[-1],3)
-        durations[-2]=round(durations[-2]-shift,3)
-        durations[-1]=6.8
-    durations[-1]=round(intro_end-sum(durations[:-1]),3)
-    return {"clip_count":len(durations),"clip_durations":durations,"intro_end_time":round(sum(durations),3)}
+        count = max(1, min(upper, round(duration / 64.0 * 8.0)))
+        intro_end = min(duration, 8.0 * count)
+        if intro_end < 8.0 * (count - 1) + 6.8 and count > 1:
+            count = max(1, min(count, int((duration - 6.8) // 8.0) + 1))
+            intro_end = min(duration, 8.0 * count)
+    intro_end = round(max(0.0, intro_end), 3)
+    durations = [8.0] * max(0, count - 1)
+    durations.append(round(intro_end - sum(durations), 3))
+    if durations[-1] < 6.8 and count > 1:
+        shift = round(6.8 - durations[-1], 3)
+        durations[-2] = round(durations[-2] - shift, 3)
+        durations[-1] = 6.8
+    durations[-1] = round(intro_end - sum(durations[:-1]), 3)
+    return {"clip_count": len(durations), "clip_durations": durations, "intro_end_time": round(sum(durations), 3)}
 
 
 def _nearest_whisper_cut(segments, target, lo, hi):
-    words=[]
+    words = []
     for segment in segments or []:
-        if not isinstance(segment,dict): continue
+        if not isinstance(segment, dict): continue
         for word in (segment.get("words") or [segment]):
             try:
-                words.append((float(word.get("start",segment.get("start",0.0))),float(word.get("end",segment.get("end",0.0)))))
-            except Exception: pass
+                words.append((float(word.get("start", segment.get("start", 0.0))),
+                              float(word.get("end", segment.get("end", 0.0)))))
+            except Exception:
+                pass
     words.sort()
-    candidates=[]
-    for index,(_,end) in enumerate(words):
-        next_start=words[index+1][0] if index+1<len(words) else end
-        gap=max(0.0,next_start-end)
-        point=end+gap*0.5 if gap>0.0 else end
-        if lo<=point<=hi: candidates.append(point)
-    return min(candidates,key=lambda x:abs(x-target)) if candidates else min(hi,max(lo,target))
-
+    candidates = []
+    for index, (_, end) in enumerate(words):
+        next_start = words[index + 1][0] if index + 1 < len(words) else end
+        gap = max(0.0, next_start - end)
+        point = end + gap * 0.5 if gap > 0.0 else end
+        if lo <= point <= hi: candidates.append(point)
+    return min(candidates, key=lambda x: abs(x - target)) if candidates else min(hi, max(lo, target))
 
 
 def assign_main_video_insert_slots(main_clips, segments, intro_end_time, audio_duration):
     if not ENABLE_MAIN_VIDEO_INSERTS or not main_clips or any(x.get("video_insert_assigned") for x in main_clips):
         return main_clips
-    remaining=max(0.0,float(audio_duration)-float(intro_end_time))
-    zones=([(0.12,0.30),(0.70,0.90)] if remaining<360 else
-           ([(0.08,0.22),(0.28,0.43),(0.58,0.73),(0.80,0.94)] if remaining<=900 else
-            [(0.05,0.18),(0.22,0.36),(0.43,0.58),(0.64,0.78),(0.82,0.96)]))
-    candidates=[(i,c) for i,c in enumerate(main_clips) if float(c["end"])-float(c["start"])>=MAIN_VIDEO_INSERT_MIN_DUR]
-    selected=[]
-    for lo,hi in zones:
-        target=float(intro_end_time)+remaining*(lo+hi)/2
-        eligible=[(i,c) for i,c in candidates if i not in selected and all(abs(i-j)>=3 for j in selected)]
-        if eligible: selected.append(min(eligible,key=lambda x:abs((float(x[1]["start"])+float(x[1]["end"]))/2-target))[0])
+    remaining = max(0.0, float(audio_duration) - float(intro_end_time))
+    zones = ([(0.12, 0.30), (0.70, 0.90)] if remaining < 360 else
+             ([(0.08, 0.22), (0.28, 0.43), (0.58, 0.73), (0.80, 0.94)] if remaining <= 900 else
+              [(0.05, 0.18), (0.22, 0.36), (0.43, 0.58), (0.64, 0.78), (0.82, 0.96)]))
+    candidates = [(i, c) for i, c in enumerate(main_clips) if
+                  float(c["end"]) - float(c["start"]) >= MAIN_VIDEO_INSERT_MIN_DUR]
+    selected = []
+    for lo, hi in zones:
+        target = float(intro_end_time) + remaining * (lo + hi) / 2
+        eligible = [(i, c) for i, c in candidates if i not in selected and all(abs(i - j) >= 3 for j in selected)]
+        if eligible: selected.append(
+            min(eligible, key=lambda x: abs((float(x[1]["start"]) + float(x[1]["end"])) / 2 - target))[0])
     try:
-        zone_text="\n".join(f"ZONE {zone_index+1}: target={float(intro_end_time)+remaining*(lo+hi)/2:.1f}s range={float(intro_end_time)+remaining*lo:.1f}-{float(intro_end_time)+remaining*hi:.1f}s" for zone_index,(lo,hi) in enumerate(zones))
-        prompt="Choose one scene index per narrative zone below. Prioritize physical movement, travel, nature/weather, crowds and location/era changes; avoid static dialogue and face closeups. Keep at least two image scenes between selected indexes. Return only a JSON integer array in zone order.\n"+zone_text+"\nCANDIDATES:\n"+"\n".join(f'{i}: {c["start"]:.2f}-{c["end"]:.2f} {str(c.get("text",""))[:180]}' for i,c in candidates[:80])
-        match=re.search(r"\[[\s\S]*?\]",str(call_text_api(prompt) or ""))
-        proposed=json.loads(match.group(0)) if match else []
-        valid=[]
+        zone_text = "\n".join(
+            f"ZONE {zone_index + 1}: target={float(intro_end_time) + remaining * (lo + hi) / 2:.1f}s range={float(intro_end_time) + remaining * lo:.1f}-{float(intro_end_time) + remaining * hi:.1f}s"
+            for zone_index, (lo, hi) in enumerate(zones))
+        prompt = "Choose one scene index per narrative zone below. Prioritize physical movement, travel, nature/weather, crowds and location/era changes; avoid static dialogue and face closeups. Keep at least two image scenes between selected indexes. Return only a JSON integer array in zone order.\n" + zone_text + "\nCANDIDATES:\n" + "\n".join(
+            f'{i}: {c["start"]:.2f}-{c["end"]:.2f} {str(c.get("text", ""))[:180]}' for i, c in candidates[:80])
+        match = re.search(r"\[[\s\S]*?\]", str(call_text_api(prompt) or ""))
+        proposed = json.loads(match.group(0)) if match else []
+        valid = []
         for value in proposed:
-            if isinstance(value,int) and any(value==i for i,_ in candidates) and value not in valid and all(abs(value-j)>=3 for j in valid):
+            if isinstance(value, int) and any(value == i for i, _ in candidates) and value not in valid and all(
+                    abs(value - j) >= 3 for j in valid):
                 valid.append(value)
         if valid:
-            selected=valid[:len(zones)]
-            if len(selected)<len(zones):
-                for fallback_index,_ in candidates:
-                    if fallback_index not in selected and all(abs(fallback_index-j)>=3 for j in selected):
+            selected = valid[:len(zones)]
+            if len(selected) < len(zones):
+                for fallback_index, _ in candidates:
+                    if fallback_index not in selected and all(abs(fallback_index - j) >= 3 for j in selected):
                         selected.append(fallback_index)
-                        if len(selected)>=len(zones): break
-    except Exception as exc: log.warning("[Veo Inserts] LLM selection failed; using zone fallback: %s",exc)
-    remainder_by_index={}
-    merged_next_indices=set()
+                        if len(selected) >= len(zones): break
+    except Exception as exc:
+        log.warning("[Veo Inserts] LLM selection failed; using zone fallback: %s", exc)
+    remainder_by_index = {}
+    merged_next_indices = set()
     for i in selected:
-        clip=main_clips[i]; start=float(clip["start"]); end=float(clip["end"])
-        if end-start>MAIN_VIDEO_INSERT_MAX_DUR:
-            cut=_nearest_whisper_cut(segments,start+MAIN_VIDEO_INSERT_TARGET_DUR,start+MAIN_VIDEO_INSERT_MIN_DUR,min(end,start+MAIN_VIDEO_INSERT_MAX_DUR))
-            if cut-start<MAIN_VIDEO_INSERT_MIN_DUR or cut-start>MAIN_VIDEO_INSERT_MAX_DUR: continue
-            remainder_end=end
-            next_record=main_clips[i+1] if i+1<len(main_clips) else None
-            if remainder_end-cut<5.5:
-                if next_record is None or i+1 in selected or float(next_record["end"])-cut>22.0: continue
-                remainder_end=float(next_record["end"])
-                merged_next_indices.add(i+1)
-            remainder=dict(clip)
-            remainder["start"]=round(cut,3); remainder["end"]=round(remainder_end,3); remainder["duration"]=round(remainder_end-cut,3)
-            remainder["media_type"]="image"; remainder["done"]=False; remainder["video_insert_assigned"]=True
-            remainder["scene_break"]=False
-            remainder["text"]=get_text_for_timeslot(segments,cut,remainder_end)
-            remainder["plan"] = str(next_record.get("plan", "")) if (i + 1 in merged_next_indices and next_record) else ""
-            remainder["image_path"]=str(Path(clip["image_path"]).with_name(f"scene_insert_remainder_{i+1:04d}.jpg"))
-            remainder["output_path"]=str(Path(clip["output_path"]).with_name(f"scene_insert_remainder_{i+1:04d}.mp4"))
-            if i+1 in merged_next_indices:
-                remainder["transition_out"]=next_record.get("transition_out","cut")
-                remainder["transition_dur"]=float(next_record.get("transition_dur",0.0) or 0.0)
+        clip = main_clips[i];
+        start = float(clip["start"]);
+        end = float(clip["end"])
+        if end - start > MAIN_VIDEO_INSERT_MAX_DUR:
+            cut = _nearest_whisper_cut(segments, start + MAIN_VIDEO_INSERT_TARGET_DUR,
+                                       start + MAIN_VIDEO_INSERT_MIN_DUR, min(end, start + MAIN_VIDEO_INSERT_MAX_DUR))
+            if cut - start < MAIN_VIDEO_INSERT_MIN_DUR or cut - start > MAIN_VIDEO_INSERT_MAX_DUR: continue
+            remainder_end = end
+            next_record = main_clips[i + 1] if i + 1 < len(main_clips) else None
+            if remainder_end - cut < 5.5:
+                if next_record is None or i + 1 in selected or float(next_record["end"]) - cut > 22.0: continue
+                remainder_end = float(next_record["end"])
+                merged_next_indices.add(i + 1)
+            remainder = dict(clip)
+            remainder["start"] = round(cut, 3);
+            remainder["end"] = round(remainder_end, 3);
+            remainder["duration"] = round(remainder_end - cut, 3)
+            remainder["media_type"] = "image";
+            remainder["done"] = False;
+            remainder["video_insert_assigned"] = True
+            remainder["scene_break"] = False
+            remainder["text"] = get_text_for_timeslot(segments, cut, remainder_end)
+            remainder["plan"] = str(next_record.get("plan", "")) if (
+                        i + 1 in merged_next_indices and next_record) else ""
+            remainder["image_path"] = str(Path(clip["image_path"]).with_name(f"scene_insert_remainder_{i + 1:04d}.jpg"))
+            remainder["output_path"] = str(
+                Path(clip["output_path"]).with_name(f"scene_insert_remainder_{i + 1:04d}.mp4"))
+            if i + 1 in merged_next_indices:
+                remainder["transition_out"] = next_record.get("transition_out", "cut")
+                remainder["transition_dur"] = float(next_record.get("transition_dur", 0.0) or 0.0)
             else:
-                remainder["transition_out"]=clip.get("transition_out","cut")
-                remainder["transition_dur"]=float(clip.get("transition_dur",0.0) or 0.0)
-            remainder["remainder_of_scene"]=i+1
-            remainder_by_index[i]=remainder
-            clip["end"]=round(cut,3); clip["duration"]=round(cut-start,3)
-            clip["text"]=get_text_for_timeslot(segments,start,cut)
-            clip["transition_out"]="cut"; clip["transition_dur"]=0.0
-        if MAIN_VIDEO_INSERT_MIN_DUR<=float(clip["end"])-float(clip["start"])<=MAIN_VIDEO_INSERT_MAX_DUR:
-            clip["media_type"]="video"
-    expanded=[]
-    for i,clip in enumerate(main_clips):
+                remainder["transition_out"] = clip.get("transition_out", "cut")
+                remainder["transition_dur"] = float(clip.get("transition_dur", 0.0) or 0.0)
+            remainder["remainder_of_scene"] = i + 1
+            remainder_by_index[i] = remainder
+            clip["end"] = round(cut, 3);
+            clip["duration"] = round(cut - start, 3)
+            clip["text"] = get_text_for_timeslot(segments, start, cut)
+            clip["transition_out"] = "cut";
+            clip["transition_dur"] = 0.0
+        if MAIN_VIDEO_INSERT_MIN_DUR <= float(clip["end"]) - float(clip["start"]) <= MAIN_VIDEO_INSERT_MAX_DUR:
+            clip["media_type"] = "video"
+    expanded = []
+    for i, clip in enumerate(main_clips):
         if i in merged_next_indices: continue
         expanded.append(clip)
         if i in remainder_by_index: expanded.append(remainder_by_index[i])
-    cursor=float(intro_end_time)
-    for index,clip in enumerate(expanded):
-        duration=max(0.05,float(clip["end"])-float(clip["start"]))
-        clip["start"]=round(cursor,3); clip["end"]=round(cursor+duration,3); clip["duration"]=round(duration,3)
-        clip["index"]=index; clip["media_type"]="video" if clip.get("media_type")=="video" else "image"
-        clip["video_insert_assigned"]=True; cursor=clip["end"]
+    cursor = float(intro_end_time)
+    for index, clip in enumerate(expanded):
+        duration = max(0.05, float(clip["end"]) - float(clip["start"]))
+        clip["start"] = round(cursor, 3);
+        clip["end"] = round(cursor + duration, 3);
+        clip["duration"] = round(duration, 3)
+        clip["index"] = index;
+        clip["media_type"] = "video" if clip.get("media_type") == "video" else "image"
+        clip["video_insert_assigned"] = True;
+        cursor = clip["end"]
     if expanded:
-        delta=round(float(audio_duration)-float(expanded[-1]["end"]),3)
-        expanded[-1]["end"]=round(float(audio_duration),3)
-        expanded[-1]["duration"]=round(expanded[-1]["duration"]+delta,3)
+        delta = round(float(audio_duration) - float(expanded[-1]["end"]), 3)
+        expanded[-1]["end"] = round(float(audio_duration), 3)
+        expanded[-1]["duration"] = round(expanded[-1]["duration"] + delta, 3)
     return expanded
 
 
@@ -4711,28 +4861,36 @@ def master_main_video_insert(raw_path, output_path, target_duration):
     )
     bitrate = f"{random.randint(*VIDEO_BITRATE_RANGE)}k"
     attempts = [
-        [FFMPEG_BIN, "-y", "-i", str(raw_path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target:.3f}", "-r", str(FPS), "-c:v", HW_ENCODER, "-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", bitrate, "-maxrate", "12000k", "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
-        [FFMPEG_BIN, "-y", "-i", str(raw_path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target:.3f}", "-r", str(FPS), "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
+        [FFMPEG_BIN, "-y", "-i", str(raw_path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target:.3f}", "-r",
+         str(FPS), "-c:v", HW_ENCODER, "-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", bitrate, "-maxrate", "12000k",
+         "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-movflags", "+faststart",
+         *FFMPEG_CLEAN_META_VIDEO, str(temp)],
+        [FFMPEG_BIN, "-y", "-i", str(raw_path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target:.3f}", "-r",
+         str(FPS), "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", "-profile:v", "high",
+         "-video_track_timescale", "15360", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
     ]
     for cmd in attempts:
         try:
             temp.unlink(missing_ok=True)
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=600)
             actual = get_duration(temp)
-            if is_valid_video(temp) and not has_audio_stream(temp) and actual is not None and abs(actual - target) <= 0.12:
+            if is_valid_video(temp) and not has_audio_stream(temp) and actual is not None and abs(
+                    actual - target) <= 0.12:
                 temp.replace(output_path)
-                log.info("[Veo Inserts] Mastered %s: %.3fs -> %.3fs (pts=%.4f); silent output", output_path.name, current, actual, pts_factor)
+                log.info("[Veo Inserts] Mastered %s: %.3fs -> %.3fs (pts=%.4f); silent output", output_path.name,
+                         current, actual, pts_factor)
                 return True
         except Exception as exc:
             log.warning("[Veo Inserts] Mastering failed: %s", exc)
     temp.unlink(missing_ok=True)
     return False
 
+
 def build_intro_narration_windows(
-    narration_segments: list[dict[str, Any]] | None,
-    shot_count: int = INTRO_SHOT_COUNT,
-    window_seconds: float = FLOW_CLIP_SECONDS,
-    clip_durations: list[float] | None = None,
+        narration_segments: list[dict[str, Any]] | None,
+        shot_count: int = INTRO_SHOT_COUNT,
+        window_seconds: float = FLOW_CLIP_SECONDS,
+        clip_durations: list[float] | None = None,
 ) -> list[dict[str, Any]]:
     """Map Whisper's actual word timestamps onto fixed intro-shot time windows.
 
@@ -4741,7 +4899,8 @@ def build_intro_narration_windows(
     that are spoken while that clip is on screen.
     """
     windows: list[dict[str, Any]] = []
-    durations = [float(x) for x in clip_durations[:shot_count]] if isinstance(clip_durations, list) and len(clip_durations) == shot_count else [float(window_seconds)] * shot_count
+    durations = [float(x) for x in clip_durations[:shot_count]] if isinstance(clip_durations, list) and len(
+        clip_durations) == shot_count else [float(window_seconds)] * shot_count
     boundaries = []
     cursor = 0.0
     for index, duration in enumerate(durations):
@@ -4790,7 +4949,8 @@ def build_intro_narration_windows(
                 # particular, do not drop the final spoken word just because its end
                 # timestamp extends a fraction past the 64-second intro boundary.
                 anchor_time = max(0.0, word_start)
-                window_index = next((i for i, (left, right) in enumerate(boundaries) if left <= anchor_time < right), -1)
+                window_index = next((i for i, (left, right) in enumerate(boundaries) if left <= anchor_time < right),
+                                    -1)
                 if 0 <= window_index < shot_count:
                     words_by_window[window_index].append(token)
         else:
@@ -4821,11 +4981,11 @@ def _format_intro_timecode(seconds: float) -> str:
 
 
 def generate_intro_storyboard_gemini(
-    opening_text: str,
-    characters: dict[str, Any] | None = None,
-    context: dict[str, Any] | None = None,
-    target_lang: str = "ru",
-    timed_windows: list[dict[str, Any]] | None = None,
+        opening_text: str,
+        characters: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
+        target_lang: str = "ru",
+        timed_windows: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Create linked opening shots matching the persisted floating-intro windows."""
     chars = "\n".join(
@@ -4845,8 +5005,8 @@ def generate_intro_storyboard_gemini(
         )
     else:
         timed_narration_block = (
-            "Whisper word timestamps are unavailable. Stay conservative and map the opening narration "
-            "chronologically; never invent specific actions or events.\n" + str(opening_text or "")[:2200]
+                "Whisper word timestamps are unavailable. Stay conservative and map the opening narration "
+                "chronologically; never invent specific actions or events.\n" + str(opening_text or "")[:2200]
         )
 
     prompt = f"""
@@ -4941,7 +5101,8 @@ Example shape:
                         cast_mode = str(item.get("cast", "NONE") or "NONE").strip().upper()
                         if cast_mode not in {"NONE", "PROTAGONIST", "SUPPORTING", "BOTH"}:
                             raise ValueError(f"Storyboard shot {index} has invalid cast value: {cast_mode!r}")
-                        locked_prompt = append_relevant_character_locks(raw_prompt, characters or {}, raw_prompt, max_characters=MAX_PRIMARY_CHARACTER_REFERENCES)
+                        locked_prompt = append_relevant_character_locks(raw_prompt, characters or {}, raw_prompt,
+                                                                        max_characters=MAX_PRIMARY_CHARACTER_REFERENCES)
                         locked_prompt = append_selected_visual_style(locked_prompt, "video")
                         window = windows[index - 1] if windows else {}
                         normalized.append({
@@ -4987,7 +5148,8 @@ Example shape:
         cast_mode = "NONE"
         if characters:
             first_character = next(iter(characters), "")
-            if first_character and re.search(rf"(?<!\w){re.escape(str(first_character))}(?!\w)", excerpt, re.IGNORECASE):
+            if first_character and re.search(rf"(?<!\w){re.escape(str(first_character))}(?!\w)", excerpt,
+                                             re.IGNORECASE):
                 cast_mode = "PROTAGONIST"
         shot = {
             "shot": index + 1,
@@ -5012,7 +5174,8 @@ Example shape:
     return fallback
 
 
-def _scene_requires_visible_person(text: str, context_before: str = "", context_after: str = "", character_bible: dict[str, Any] | None = None) -> bool:
+def _scene_requires_visible_person(text: str, context_before: str = "", context_after: str = "",
+                                   character_bible: dict[str, Any] | None = None) -> bool:
     """High-confidence cue that a scene contains a person acting or speaking.
 
     This is deliberately narrower than a mere mention of a human in the narration:
@@ -5070,9 +5233,9 @@ def _scene_requires_visible_person(text: str, context_before: str = "", context_
     actions = bool(action_re.search(current_l))
     quotes = bool(re.search(r'["“”«»„].{2,}["“”«»„]', current))
     vulnerable_subject_is_safe = (
-        bool(SAFE_CHILD_CONTEXT_PATTERN.search(current))
-        or bool(SAFE_PREGNANCY_CONTEXT_PATTERN.search(current))
-    ) and not bool(SAFE_HARM_CONTEXT_PATTERN.search(current))
+                                         bool(SAFE_CHILD_CONTEXT_PATTERN.search(current))
+                                         or bool(SAFE_PREGNANCY_CONTEXT_PATTERN.search(current))
+                                 ) and not bool(SAFE_HARM_CONTEXT_PATTERN.search(current))
     if vulnerable_subject_is_safe:
         return True
 
@@ -5086,7 +5249,8 @@ def _scene_requires_visible_person(text: str, context_before: str = "", context_
                 matched_character = True
                 break
 
-    if speech and (humans or matched_character or quotes or not re.search(r"\b(?:the report|the sign|el informe|el cartel|отчёт|отчет|табличка|вывеска)\b", current_l, re.I)):
+    if speech and (humans or matched_character or quotes or not re.search(
+            r"\b(?:the report|the sign|el informe|el cartel|отчёт|отчет|табличка|вывеска)\b", current_l, re.I)):
         return True
     if actions and (humans or matched_character):
         return True
@@ -5105,10 +5269,10 @@ def _scene_requires_visible_person(text: str, context_before: str = "", context_
 
 
 def _infer_scene_cast_mode(
-    text: str,
-    context_before: str = "",
-    context_after: str = "",
-    character_bible: dict[str, Any] | None = None,
+        text: str,
+        context_before: str = "",
+        context_after: str = "",
+        character_bible: dict[str, Any] | None = None,
 ) -> str:
     """Infer a safe CAST marker when Gemini omits one or contradicts clear action/dialogue."""
     current = _scene_subject_text(str(text or ""))
@@ -5149,8 +5313,9 @@ def _infer_scene_cast_mode(
                 continue
             role = str(entry.get("narrative_role", "supporting")).casefold()
             is_protagonist = (
-                role in {"protagonist", "narrator", "main character", "central character", "главный герой", "главная героиня", "рассказчик"}
-                or bool(entry.get("channel_reference_locked"))
+                    role in {"protagonist", "narrator", "main character", "central character", "главный герой",
+                             "главная героиня", "рассказчик"}
+                    or bool(entry.get("channel_reference_locked"))
             )
             if _text_mentions_character(current, entry):
                 if is_protagonist:
@@ -5203,10 +5368,10 @@ def _infer_scene_cast_mode(
 
 
 def _fallback_scene_plan(
-    text: str,
-    context_before: str = "",
-    context_after: str = "",
-    character_bible: dict[str, Any] | None = None,
+        text: str,
+        context_before: str = "",
+        context_after: str = "",
+        character_bible: dict[str, Any] | None = None,
 ) -> str:
     if _scene_requires_visible_person(text, context_before, context_after, character_bible):
         mode = _infer_scene_cast_mode(text, context_before, context_after, character_bible)
@@ -5277,7 +5442,7 @@ def _scene_plan_recovery_wait(attempt_number: int) -> tuple[float | None, str]:
             ready_proxies = [
                 proxy for proxy in GEMINI_PROXIES_LIST
                 if proxy not in _gemini_proxy_in_use
-                and float(_gemini_proxy_cooldowns.get(proxy, 0.0) or 0.0) <= now
+                   and float(_gemini_proxy_cooldowns.get(proxy, 0.0) or 0.0) <= now
             ]
             if not ready_proxies:
                 unlocks = [
@@ -5303,9 +5468,9 @@ def _scene_plan_recovery_wait(attempt_number: int) -> tuple[float | None, str]:
 
 
 def generate_scene_plan(
-    all_segments_text: list[str],
-    scene_contexts: list[dict[str, str]] | None = None,
-    character_bible: dict[str, Any] | None = None,
+        all_segments_text: list[str],
+        scene_contexts: list[dict[str, str]] | None = None,
+        character_bible: dict[str, Any] | None = None,
 ) -> list[str]:
     """Create a complete storyboard; rotate models and split malformed batches, never guess scenes.
 
@@ -5370,7 +5535,8 @@ CLIPS:
 {chr(10).join(blocks)}
 """.strip()
 
-    def parse_rows(response: str, requested_indices: list[int], already_valid: dict[int, tuple[str, str]]) -> dict[int, tuple[str, str]]:
+    def parse_rows(response: str, requested_indices: list[int], already_valid: dict[int, tuple[str, str]]) -> dict[
+        int, tuple[str, str]]:
         parsed_this_attempt: dict[int, tuple[str, str]] = {}
         requested_ids = {idx + 1 for idx in requested_indices}
         for raw_line in str(response or "").splitlines():
@@ -5441,12 +5607,13 @@ CLIPS:
                             if not _GEMINI_MODEL_HEALTH.setdefault(model_name, {}).get("unsupported", False):
                                 supported_count += 1
                 if supported_count and len(excluded_models) >= supported_count:
-                    log.info("[Scene Plan Retry] All supported models were tried for malformed output; starting a fresh model cycle.")
+                    log.info(
+                        "[Scene Plan Retry] All supported models were tried for malformed output; starting a fresh model cycle.")
                     excluded_models.clear()
 
                 if (
-                    consecutive_format_failures >= SCENE_PLAN_FORMAT_RETRIES_BEFORE_SPLIT
-                    and len(missing_indices) > SCENE_PLAN_MIN_BATCH_SIZE
+                        consecutive_format_failures >= SCENE_PLAN_FORMAT_RETRIES_BEFORE_SPLIT
+                        and len(missing_indices) > SCENE_PLAN_MIN_BATCH_SIZE
                 ):
                     midpoint = (len(missing_indices) + 1) // 2
                     child_groups = [missing_indices[:midpoint], missing_indices[midpoint:]]
@@ -5475,7 +5642,8 @@ CLIPS:
                     # A transport outage is not evidence that the previously malformed
                     # model is bad permanently. Once the router returns None, clear the
                     # temporary format exclusions before the cooldown-aware retry cycle.
-                    log.info("[Scene Plan Retry] API unavailable; clearing temporary malformed-response model exclusions before recovery retry.")
+                    log.info(
+                        "[Scene Plan Retry] API unavailable; clearing temporary malformed-response model exclusions before recovery retry.")
                     excluded_models.clear()
 
             if api_attempt >= SCENE_PLAN_MAX_API_ATTEMPTS:
@@ -5533,8 +5701,8 @@ CLIPS:
                 )
                 mode = corrected_mode
                 description = (
-                    "show the actual person or people performing the action or dialogue in this exact narration beat; "
-                    + description
+                        "show the actual person or people performing the action or dialogue in this exact narration beat; "
+                        + description
                 )
             plans[global_index] = f"CAST={mode} | {description}"
 
@@ -5548,14 +5716,14 @@ CLIPS:
 
 
 def generate_video_prompt(
-    clip_index: int,
-    segment_text: str,
-    ctx_before: str,
-    ctx_after: str,
-    plan_entry: str,
-    main_characters: dict[str, Any],
-    general_context: dict[str, Any],
-    target_lang: str = "ru",
+        clip_index: int,
+        segment_text: str,
+        ctx_before: str,
+        ctx_after: str,
+        plan_entry: str,
+        main_characters: dict[str, Any],
+        general_context: dict[str, Any],
+        target_lang: str = "ru",
 ) -> str:
     visual_language = narration_language_name(target_lang)
     chars = "\n".join(
@@ -5607,7 +5775,8 @@ Return ONLY the final video prompt, 70-120 words.
     if res:
         generated = re.sub(r"^(prompt|video prompt):\s*", "", res.strip(), flags=re.I)
         generated = append_relevant_character_locks(
-            generated, main_characters, segment_text, plan_entry, ctx_before[-500:], ctx_after[:500], max_characters=MAX_PRIMARY_CHARACTER_REFERENCES
+            generated, main_characters, segment_text, plan_entry, ctx_before[-500:], ctx_after[:500],
+            max_characters=MAX_PRIMARY_CHARACTER_REFERENCES
         )
         generated = append_selected_visual_style(generated, "video")
         return enforce_flow_ambience_only_audio(
@@ -5623,7 +5792,8 @@ Return ONLY the final video prompt, 70-120 words.
         f"authentic textures and stable composition. If harm is discussed, show only calm recovery or neutral context, not the harmful act."
     )
     fallback = append_relevant_character_locks(
-        fallback, main_characters, segment_text, plan_entry, ctx_before[-500:], ctx_after[:500], max_characters=MAX_PRIMARY_CHARACTER_REFERENCES
+        fallback, main_characters, segment_text, plan_entry, ctx_before[-500:], ctx_after[:500],
+        max_characters=MAX_PRIMARY_CHARACTER_REFERENCES
     )
     fallback = append_selected_visual_style(fallback, "video")
     return enforce_flow_ambience_only_audio(
@@ -5634,15 +5804,15 @@ Return ONLY the final video prompt, 70-120 words.
 
 
 def generate_image_prompt(
-    clip_index: int,
-    segment_text: str,
-    ctx_before: str,
-    ctx_after: str,
-    plan_entry: str,
-    main_characters: dict[str, Any],
-    general_context: dict[str, Any],
-    target_lang: str = "ru",
-    defer_character_locks: bool = False,
+        clip_index: int,
+        segment_text: str,
+        ctx_before: str,
+        ctx_after: str,
+        plan_entry: str,
+        main_characters: dict[str, Any],
+        general_context: dict[str, Any],
+        target_lang: str = "ru",
+        defer_character_locks: bool = False,
 ) -> str:
     visual_language = narration_language_name(target_lang)
     chars = "\n".join(
@@ -5722,15 +5892,16 @@ def get_thumbnail_prompt_1(text: str, target_lang: str = "ru") -> str | None:
         "Do not depict abuse, animal distress, blood, wounds, graphic injury, cruelty, death, or suffering as clickbait; prefer calm care/recovery or a neutral setting."
     )
     return apply_visible_text_language_rule(
-        apply_youtube_content_safety_rules(append_selected_visual_style(res.strip(), "thumbnail"), "thumbnail"), target_lang
+        apply_youtube_content_safety_rules(append_selected_visual_style(res.strip(), "thumbnail"), "thumbnail"),
+        target_lang
     ) if res else None
 
 
 def get_thumbnail_prompt_2(
-    image_name: str,
-    target_lang: str = "ru",
-    story_text: str = "",
-    title: str = "",
+        image_name: str,
+        target_lang: str = "ru",
+        story_text: str = "",
+        title: str = "",
 ) -> str | None:
     """Prompt a close, story-aware variation of the attached source thumbnail.
 
@@ -5772,7 +5943,8 @@ def get_thumbnail_prompt_2(
         "Attached image 2, if present, is the identity reference for the protagonist only and must not override the original thumbnail's composition."
     )
     result = apply_visible_text_language_rule(
-        apply_youtube_content_safety_rules(append_selected_visual_style(res.strip() + composition_lock, "thumbnail"), "thumbnail"),
+        apply_youtube_content_safety_rules(append_selected_visual_style(res.strip() + composition_lock, "thumbnail"),
+                                           "thumbnail"),
         target_lang,
     )
     return result
@@ -5796,8 +5968,10 @@ def get_clickable_thumbnail_prompt(story_text: str, title: str, target_lang: str
             "clean 16:9 composition, textless, no logos or watermarks."
         )
     return apply_visible_text_language_rule(
-        apply_youtube_content_safety_rules(append_selected_visual_style(res.strip(), "thumbnail"), "thumbnail"), target_lang
+        apply_youtube_content_safety_rules(append_selected_visual_style(res.strip(), "thumbnail"), "thumbnail"),
+        target_lang
     )
+
 
 def get_thumbnail_prompt_3(title: str, target_lang: str = "ru") -> str | None:
     res = call_text_api(
@@ -5806,8 +5980,10 @@ def get_thumbnail_prompt_3(title: str, target_lang: str = "ru") -> str | None:
         "Do not depict animal suffering, abuse, blood, wounds, graphic injury, or death; show calm recovery or a neutral setting where relevant."
     )
     return apply_visible_text_language_rule(
-        apply_youtube_content_safety_rules(append_selected_visual_style(res.strip(), "thumbnail"), "thumbnail"), target_lang
+        apply_youtube_content_safety_rules(append_selected_visual_style(res.strip(), "thumbnail"), "thumbnail"),
+        target_lang
     ) if res else None
+
 
 # ============================================================================
 # FLOW EXCEPTIONS
@@ -5899,7 +6075,6 @@ def detect_new_flow_third_party_refusal(current_text: str, baseline_text: str = 
         if all(part in current for part in combo) and not all(part in baseline for part in combo):
             return "localized third-party content-provider refusal: " + " + ".join(combo)
     return None
-
 
 
 FLOW_RATE_LIMIT_MARKERS = (
@@ -6063,9 +6238,9 @@ def sha256_file(path: Path) -> str:
 
 
 def review_images_for_youtube(
-    image_paths: list[Path],
-    context: str = "",
-    media_kind: str = "image",
+        image_paths: list[Path],
+        context: str = "",
+        media_kind: str = "image",
 ) -> dict[str, Any]:
     """Use Gemini vision as an advisory pre-publication screen for generated visuals.
 
@@ -6074,12 +6249,18 @@ def review_images_for_youtube(
     guarantee YouTube policy compliance and never disables provider safety filters.
     """
     if not ENABLE_YOUTUBE_CONTENT_SAFETY_REVIEW:
-        return {"decision": "SKIPPED", "reason": "Content-safety review disabled in configuration", "reviewed_at": now_iso()}
+        return {"decision": "SKIPPED", "reason": "Content-safety review disabled in configuration",
+                "reviewed_at": now_iso()}
     if not USE_GEMINI_PROXY or not GEMINI_PROXIES_LIST:
-        return {"decision": "REVIEW", "reason": "Gemini content review requires a configured proxy; direct requests are disabled", "reviewed_at": now_iso()}
-    usable_paths = [Path(item) for item in image_paths if Path(item).is_file() and is_valid_image(Path(item), min_size=100)]
+        return {"decision": "REVIEW",
+                "reason": "Gemini content review requires a configured proxy; direct requests are disabled",
+                "reviewed_at": now_iso()}
+    usable_paths = [Path(item) for item in image_paths if
+                    Path(item).is_file() and is_valid_image(Path(item), min_size=100)]
     if not usable_paths:
-        return {"decision": "REVIEW", "reason": "No valid image/frame was available; content was not screened and manual inspection is recommended", "reviewed_at": now_iso()}
+        return {"decision": "REVIEW",
+                "reason": "No valid image/frame was available; content was not screened and manual inspection is recommended",
+                "reviewed_at": now_iso()}
 
     try:
         from io import BytesIO
@@ -6103,15 +6284,20 @@ def review_images_for_youtube(
                 encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
             parts.append({"inline_data": {"mime_type": "image/jpeg", "data": encoded}})
     except Exception as exc:
-        return {"decision": "REVIEW", "reason": f"Could not prepare media for content review: {type(exc).__name__}: {exc}", "reviewed_at": now_iso()}
+        return {"decision": "REVIEW",
+                "reason": f"Could not prepare media for content review: {type(exc).__name__}: {exc}",
+                "reviewed_at": now_iso()}
 
     for attempt in range(1, 3):
         api_key = _get_next_gemini_key()
         if not api_key:
-            return {"decision": "REVIEW", "reason": "No Gemini API key is available for content review", "reviewed_at": now_iso()}
+            return {"decision": "REVIEW", "reason": "No Gemini API key is available for content review",
+                    "reviewed_at": now_iso()}
         proxy = _acquire_next_proxy()
         if not proxy:
-            return {"decision": "REVIEW", "reason": "No proxy available for Gemini content review; direct requests are disabled", "reviewed_at": now_iso()}
+            return {"decision": "REVIEW",
+                    "reason": "No proxy available for Gemini content review; direct requests are disabled",
+                    "reviewed_at": now_iso()}
         proxies = {"http": proxy, "https": proxy}
         model_name = YOUTUBE_CONTENT_REVIEW_MODEL
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
@@ -6129,16 +6315,22 @@ def review_images_for_youtube(
                 body = response.json()
                 candidates = body.get("candidates") or []
                 if not candidates:
-                    return {"decision": "REVIEW", "reason": "Gemini returned no review candidate; content was not conclusively screened, manual inspection recommended", "reviewed_at": now_iso(), "model": model_name}
+                    return {"decision": "REVIEW",
+                            "reason": "Gemini returned no review candidate; content was not conclusively screened, manual inspection recommended",
+                            "reviewed_at": now_iso(), "model": model_name}
                 text_parts = candidates[0].get("content", {}).get("parts", [])
                 response_text = "\n".join(str(item.get("text", "")) for item in text_parts if item.get("text"))
                 match = re.search(r"\{.*\}", response_text, re.DOTALL)
                 if not match:
-                    return {"decision": "REVIEW", "reason": "Gemini review response was not valid JSON; content was not conclusively screened, manual inspection recommended", "reviewed_at": now_iso(), "model": model_name}
+                    return {"decision": "REVIEW",
+                            "reason": "Gemini review response was not valid JSON; content was not conclusively screened, manual inspection recommended",
+                            "reviewed_at": now_iso(), "model": model_name}
                 try:
                     parsed = json.loads(match.group(0))
                 except json.JSONDecodeError:
-                    return {"decision": "REVIEW", "reason": "Gemini review JSON could not be parsed; content was not conclusively screened, manual inspection recommended", "reviewed_at": now_iso(), "model": model_name}
+                    return {"decision": "REVIEW",
+                            "reason": "Gemini review JSON could not be parsed; content was not conclusively screened, manual inspection recommended",
+                            "reviewed_at": now_iso(), "model": model_name}
                 decision = str(parsed.get("decision", "REVIEW")).upper().strip()
                 if decision not in {"PASS", "REJECT", "REVIEW"}:
                     decision = "REVIEW"
@@ -6150,7 +6342,8 @@ def review_images_for_youtube(
                     "model": model_name,
                     "frames_reviewed": len(usable_paths),
                 }
-                log.info("[Content Safety] %s: %s (%s)", decision, ", ".join(p.name for p in usable_paths), result["reason"][:200])
+                log.info("[Content Safety] %s: %s (%s)", decision, ", ".join(p.name for p in usable_paths),
+                         result["reason"][:200])
                 return result
 
             body_lower = response.text.lower()
@@ -6159,9 +6352,12 @@ def review_images_for_youtube(
             elif response.status_code == 403:
                 _kill_gemini_key(api_key, "content review 403", is_temporary=True, cooldown_minutes=15)
             else:
-                log.warning("[Content Safety] Review API returned HTTP %s: %s", response.status_code, response.text[:300])
+                log.warning("[Content Safety] Review API returned HTTP %s: %s", response.status_code,
+                            response.text[:300])
                 if response.status_code in (400, 404) or "model" in body_lower and "not found" in body_lower:
-                    return {"decision": "REVIEW", "reason": f"Content-review API error HTTP {response.status_code}; content was not conclusively screened, manual inspection recommended", "reviewed_at": now_iso(), "model": model_name}
+                    return {"decision": "REVIEW",
+                            "reason": f"Content-review API error HTTP {response.status_code}; content was not conclusively screened, manual inspection recommended",
+                            "reviewed_at": now_iso(), "model": model_name}
         except requests.exceptions.RequestException as exc:
             if proxy:
                 _put_proxy_on_cooldown(proxy, f"content review {type(exc).__name__}", duration_sec=90)
@@ -6172,10 +6368,13 @@ def review_images_for_youtube(
             _release_proxy(proxy)
         time.sleep(0.8)
 
-    return {"decision": "REVIEW", "reason": "Content-review service unavailable after retries; content was not screened, manual inspection recommended", "reviewed_at": now_iso(), "model": YOUTUBE_CONTENT_REVIEW_MODEL}
+    return {"decision": "REVIEW",
+            "reason": "Content-review service unavailable after retries; content was not screened, manual inspection recommended",
+            "reviewed_at": now_iso(), "model": YOUTUBE_CONTENT_REVIEW_MODEL}
 
 
-def review_image_with_cache(record: dict[str, Any], path: Path, context: str, cache_field: str = "content_safety_review") -> dict[str, Any]:
+def review_image_with_cache(record: dict[str, Any], path: Path, context: str,
+                            cache_field: str = "content_safety_review") -> dict[str, Any]:
     """Reuse a PASS only when the exact same image bytes were previously reviewed."""
     digest = sha256_file(path)
     previous = record.get(cache_field, {})
@@ -6190,10 +6389,12 @@ def review_image_with_cache(record: dict[str, Any], path: Path, context: str, ca
 def review_video_for_youtube(path: Path, context: str = "", temp_dir: Path | None = None) -> dict[str, Any]:
     """Review three representative frames from a generated intro clip."""
     if not ENABLE_YOUTUBE_CONTENT_SAFETY_REVIEW:
-        return {"decision": "SKIPPED", "reason": "Content-safety review disabled in configuration", "reviewed_at": now_iso()}
+        return {"decision": "SKIPPED", "reason": "Content-safety review disabled in configuration",
+                "reviewed_at": now_iso()}
     duration = get_duration(path)
     if duration is None or duration <= 0.1:
-        return {"decision": "REVIEW", "reason": "Video duration unavailable; content cannot be screened", "reviewed_at": now_iso()}
+        return {"decision": "REVIEW", "reason": "Video duration unavailable; content cannot be screened",
+                "reviewed_at": now_iso()}
     frame_root = ensure_directory(temp_dir or Path(tempfile.gettempdir()) / "flow_content_safety")
     sample_dir = Path(tempfile.mkdtemp(prefix="review_frames_", dir=str(frame_root)))
     frames: list[Path] = []
@@ -6202,16 +6403,19 @@ def review_video_for_youtube(path: Path, context: str = "", temp_dir: Path | Non
             frame_path = sample_dir / f"frame_{index:02d}.jpg"
             timestamp = min(max(0.0, duration * fraction), max(0.0, duration - 0.05))
             subprocess.run(
-                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{timestamp:.3f}", "-i", str(path), "-frames:v", "1", "-q:v", "3", str(frame_path)],
+                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{timestamp:.3f}", "-i", str(path),
+                 "-frames:v", "1", "-q:v", "3", str(frame_path)],
                 check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=35,
             )
             if is_valid_image(frame_path, min_size=100):
                 frames.append(frame_path)
         if len(frames) != len(YOUTUBE_CONTENT_REVIEW_VIDEO_FRAME_FRACTIONS):
-            return {"decision": "REVIEW", "reason": "Could not extract all required intro-video review frames", "reviewed_at": now_iso()}
+            return {"decision": "REVIEW", "reason": "Could not extract all required intro-video review frames",
+                    "reviewed_at": now_iso()}
         return review_images_for_youtube(frames, context=context, media_kind="intro video keyframes")
     except Exception as exc:
-        return {"decision": "REVIEW", "reason": f"Video frame review failed: {type(exc).__name__}: {exc}", "reviewed_at": now_iso()}
+        return {"decision": "REVIEW", "reason": f"Video frame review failed: {type(exc).__name__}: {exc}",
+                "reviewed_at": now_iso()}
     finally:
         shutil.rmtree(sample_dir, ignore_errors=True)
 
@@ -6249,7 +6453,8 @@ def find_similar_channel_scripts(project_folder: Path, current_text: str, max_fi
         except Exception:
             continue
         for candidate in candidates:
-            if candidate.resolve() == (project_folder / candidate.name).resolve() and sibling.resolve() == project_folder.resolve():
+            if candidate.resolve() == (
+                    project_folder / candidate.name).resolve() and sibling.resolve() == project_folder.resolve():
                 continue
             if inspected >= max_files:
                 break
@@ -6277,14 +6482,17 @@ def find_similar_channel_scripts(project_folder: Path, current_text: str, max_fi
     matches.sort(key=lambda item: item["jaccard_5word_shingles"], reverse=True)
     closest = matches[:5]
     highest = closest[0]["jaccard_5word_shingles"] if closest else 0.0
-    status = "POSSIBLE_NEAR_DUPLICATE" if highest >= YOUTUBE_SCRIPT_SIMILARITY_WARNING_THRESHOLD else ("SIMILARITY_TO_REVIEW" if highest >= 0.60 else "NO_STRONG_MATCH_FOUND")
-    return {"status": status, "threshold": YOUTUBE_SCRIPT_SIMILARITY_WARNING_THRESHOLD, "files_inspected": inspected, "closest_matches": closest}
+    status = "POSSIBLE_NEAR_DUPLICATE" if highest >= YOUTUBE_SCRIPT_SIMILARITY_WARNING_THRESHOLD else (
+        "SIMILARITY_TO_REVIEW" if highest >= 0.60 else "NO_STRONG_MATCH_FOUND")
+    return {"status": status, "threshold": YOUTUBE_SCRIPT_SIMILARITY_WARNING_THRESHOLD, "files_inspected": inspected,
+            "closest_matches": closest}
 
 
 def review_youtube_monetization_text(narration: str, title: str = "", mode: str = "script") -> dict[str, Any]:
     """Ask Gemini for an advisory policy-risk review of narration/title; not a YouTube approval."""
     if not ENABLE_YOUTUBE_MONETIZATION_PREFLIGHT:
-        return {"decision": "SKIPPED", "reason": "Monetization preflight disabled in configuration", "recommendations": []}
+        return {"decision": "SKIPPED", "reason": "Monetization preflight disabled in configuration",
+                "recommendations": []}
 
     prompt = f"""You are a conservative YouTube pre-publication policy and advertiser-suitability reviewer.
 Return ONLY valid JSON with these keys:
@@ -6313,7 +6521,8 @@ Rules for your assessment:
             "decision": "REVIEW",
             "policy_areas": ["review_service_unavailable"],
             "reason": "Gemini did not return a usable response; manual review is recommended.",
-            "recommendations": ["Check the narration, title, thumbnail, generated visuals, and channel-level originality manually."],
+            "recommendations": [
+                "Check the narration, title, thumbnail, generated visuals, and channel-level originality manually."],
             "safer_title_suggestion": "",
             "ai_disclosure_check": "Review YouTube Studio's AI-use setting if the video depicts realistic synthetic scenes that did not occur.",
         }
@@ -6330,9 +6539,11 @@ Rules for your assessment:
             "decision": decision,
             "policy_areas": parsed.get("policy_areas", []) if isinstance(parsed.get("policy_areas", []), list) else [],
             "reason": str(parsed.get("reason", "No reason supplied"))[:1800],
-            "recommendations": parsed.get("recommendations", []) if isinstance(parsed.get("recommendations", []), list) else [],
+            "recommendations": parsed.get("recommendations", []) if isinstance(parsed.get("recommendations", []),
+                                                                               list) else [],
             "safer_title_suggestion": str(parsed.get("safer_title_suggestion", ""))[:300],
-            "ai_disclosure_check": str(parsed.get("ai_disclosure_check", "Review YouTube Studio's AI-use setting when relevant."))[:600],
+            "ai_disclosure_check": str(
+                parsed.get("ai_disclosure_check", "Review YouTube Studio's AI-use setting when relevant."))[:600],
             "reviewed_at": now_iso(),
         }
     except Exception as exc:
@@ -6347,7 +6558,8 @@ Rules for your assessment:
         }
 
 
-def build_youtube_monetization_preflight(project_folder: Path, script_path: Path, text: str, title: str = "") -> dict[str, Any]:
+def build_youtube_monetization_preflight(project_folder: Path, script_path: Path, text: str, title: str = "") -> dict[
+    str, Any]:
     script_review = review_youtube_monetization_text(text, title=title, mode="script and title" if title else "script")
     similarity = find_similar_channel_scripts(project_folder, text)
     report = {
@@ -6365,7 +6577,8 @@ def build_youtube_monetization_preflight(project_folder: Path, script_path: Path
         ],
     }
     if similarity.get("status") == "POSSIBLE_NEAR_DUPLICATE":
-        report["originality_warning"] = "A script in a sibling project is highly similar. Confirm this episode has a genuinely distinct narrative, facts, commentary, and viewer value. Small visual/audio changes alone do not make repetitive content original."
+        report[
+            "originality_warning"] = "A script in a sibling project is highly similar. Confirm this episode has a genuinely distinct narrative, facts, commentary, and viewer value. Small visual/audio changes alone do not make repetitive content original."
     return report
 
 
@@ -6381,9 +6594,9 @@ def save_youtube_monetization_preflight(project_folder: Path, report: dict[str, 
 
 
 def unique_enabled_flow_profiles(
-    profiles: list[dict[str, Any]],
-    *,
-    warn_duplicates: bool = True,
+        profiles: list[dict[str, Any]],
+        *,
+        warn_duplicates: bool = True,
 ) -> list[dict[str, Any]]:
     """Keep one entry per real Chrome user-data directory and CDP port.
 
@@ -6447,7 +6660,7 @@ def unique_enabled_flow_profiles(
         by_port[port] = profile
 
     if warn_duplicates and len(unique) != sum(
-        1 for p in profiles if isinstance(p, dict) and p.get("enabled", True)
+            1 for p in profiles if isinstance(p, dict) and p.get("enabled", True)
     ):
         configured = sum(1 for p in profiles if isinstance(p, dict) and p.get("enabled", True))
         log.warning(
@@ -6573,8 +6786,8 @@ class FlowAccountManager:
                 "images": saved_round_images,
                 "videos": saved_round_videos,
                 "exhausted": (
-                    saved_round_images >= FLOW_SESSION_IMAGE_LIMIT
-                    and saved_round_videos >= FLOW_SESSION_VIDEO_LIMIT
+                        saved_round_images >= FLOW_SESSION_IMAGE_LIMIT
+                        and saved_round_videos >= FLOW_SESSION_VIDEO_LIMIT
                 ),
             }
             self.browser_instance_ids[name] = current_id
@@ -6615,7 +6828,9 @@ class FlowAccountManager:
                     "last_error": state.last_error[:500] if state.status == "QUOTA_LIMIT" else "",
                     "updated_at": now_iso(),
                 }
-            atomic_write_json(self.usage_state_path, {"schema": 2, "round_number": self.round_number, "profiles": records, "updated_at": now_iso()})
+            atomic_write_json(self.usage_state_path,
+                              {"schema": 2, "round_number": self.round_number, "profiles": records,
+                               "updated_at": now_iso()})
         except Exception as exc:
             log.warning("[Flow Account] Не удалось сохранить счётчики сессии: %s", exc)
 
@@ -6674,15 +6889,15 @@ class FlowAccountManager:
     def session_limit_reached(self, profile_name: str) -> bool:
         """True only after BOTH media-specific limits have been reached."""
         return (
-            self.media_quota_reached(profile_name, "image")
-            and self.media_quota_reached(profile_name, "video")
+                self.media_quota_reached(profile_name, "image")
+                and self.media_quota_reached(profile_name, "video")
         )
 
     def available_profiles(self, kind: str | None = None) -> list[dict[str, Any]]:
-        result=[]
-        now=time.time()
+        result = []
+        now = time.time()
         for profile in self.profiles:
-            state=self.states[profile["name"]]
+            state = self.states[profile["name"]]
             if state.paused_until > now:
                 continue
             if state.status not in {"READY", "WORKING"}:
@@ -6713,10 +6928,10 @@ class FlowAccountManager:
             if self.active_profile_name:
                 active = self.profile_by_name(self.active_profile_name)
                 if (
-                    self.can_do(active, kind)
-                    and not self.media_quota_reached(self.active_profile_name, kind)
-                    and self.states[self.active_profile_name].paused_until <= time.time()
-                    and self.states[self.active_profile_name].status in {"READY", "WORKING"}
+                        self.can_do(active, kind)
+                        and not self.media_quota_reached(self.active_profile_name, kind)
+                        and self.states[self.active_profile_name].paused_until <= time.time()
+                        and self.states[self.active_profile_name].status in {"READY", "WORKING"}
                 ):
                     self.states[self.active_profile_name].status = "WORKING"
                     return active
@@ -6729,9 +6944,10 @@ class FlowAccountManager:
                 eligible = [
                     p for p in self.profiles
                     if self.can_do(p, kind)
-                    and self.states[p["name"]].paused_until <= now
-                    and self.states[p["name"]].status in {"READY", "WORKING"}
+                       and self.states[p["name"]].paused_until <= now
+                       and self.states[p["name"]].status in {"READY", "WORKING"}
                 ]
+
                 def quota_consumed(profile: dict[str, Any]) -> bool:
                     return self.media_quota_reached(profile["name"], kind)
 
@@ -6748,12 +6964,13 @@ class FlowAccountManager:
                         )
                         usage[kind + "s"] = 0
                         usage["exhausted"] = (
-                            int(usage.get("images", 0)) >= FLOW_SESSION_IMAGE_LIMIT
-                            and int(usage.get("videos", 0)) >= FLOW_SESSION_VIDEO_LIMIT
+                                int(usage.get("images", 0)) >= FLOW_SESSION_IMAGE_LIMIT
+                                and int(usage.get("videos", 0)) >= FLOW_SESSION_VIDEO_LIMIT
                         )
                         # Close browser sessions before reusing this media allowance.
                         try:
-                            active_controller_profile = getattr(getattr(self.active_controller, "profile", None), "get", lambda *_: None)("name")
+                            active_controller_profile = getattr(getattr(self.active_controller, "profile", None), "get",
+                                                                lambda *_: None)("name")
                             if self.active_controller is not None and active_controller_profile == name:
                                 await self.active_controller.disconnect(close_chrome=True)
                                 self.active_controller = None
@@ -6761,7 +6978,8 @@ class FlowAccountManager:
                             else:
                                 await asyncio.to_thread(close_chrome_profile_process, profile)
                         except Exception as exc:
-                            log.warning("[Flow Round] Не удалось штатно закрыть профиль %s при завершении круга: %s", name, exc)
+                            log.warning("[Flow Round] Не удалось штатно закрыть профиль %s при завершении круга: %s",
+                                        name, exc)
                         state.session_images = 0
                         state.session_videos = 0
                         state.status = "READY"
@@ -6861,10 +7079,10 @@ class FlowAccountManager:
             return chosen
 
     def mark_done(self, profile_name: str, kind: str) -> bool:
-        state=self.states[profile_name]
-        state.status="READY"
-        state.failures=0
-        state.last_error=""
+        state = self.states[profile_name]
+        state.status = "READY"
+        state.failures = 0
+        state.last_error = ""
         state.jobs_done += 1
         usage = self.round_usage.setdefault(profile_name, {"images": 0, "videos": 0, "exhausted": False})
         if kind == "image":
@@ -6876,8 +7094,8 @@ class FlowAccountManager:
             state.session_videos += 1
             usage["videos"] = int(usage.get("videos", 0)) + 1
         usage["exhausted"] = (
-            int(usage.get("images", 0)) >= FLOW_SESSION_IMAGE_LIMIT
-            and int(usage.get("videos", 0)) >= FLOW_SESSION_VIDEO_LIMIT
+                int(usage.get("images", 0)) >= FLOW_SESSION_IMAGE_LIMIT
+                and int(usage.get("videos", 0)) >= FLOW_SESSION_VIDEO_LIMIT
         )
         used_for_kind = self.media_quota_used(profile_name, kind)
         limit_for_kind = self.media_quota_limit(kind)
@@ -6892,23 +7110,23 @@ class FlowAccountManager:
         return quota_reached
 
     def mark_technical_error(self, profile_name: str, error: str) -> None:
-        state=self.states[profile_name]
-        state.status="READY"
+        state = self.states[profile_name]
+        state.status = "READY"
         state.failures += 1
-        state.last_error=error
+        state.last_error = error
         log.warning(
             "[Flow Account] %s technical failure #%s: %s",
             profile_name, state.failures, error[:180],
         )
         if state.failures >= 3:
-            state.paused_until=time.time()+180
-            state.status="PAUSED"
+            state.paused_until = time.time() + 180
+            state.status = "PAUSED"
 
     def mark_policy_block(self, profile_name: str, reason: str) -> None:
-        state=self.states[profile_name]
-        state.status="CHALLENGE"
-        state.last_error=reason
-        state.paused_until=time.time()+3600
+        state = self.states[profile_name]
+        state.status = "CHALLENGE"
+        state.last_error = reason
+        state.paused_until = time.time() + 3600
         state.quota_detected_at = 0.0
         state.quota_next_probe_at = 0.0
         self._save_persistent_session_usage()
@@ -6934,13 +7152,13 @@ class FlowAccountManager:
         )
 
     def mark_quota(self, profile_name: str, reason: str) -> None:
-        state=self.states[profile_name]
+        state = self.states[profile_name]
         if state.status != "QUOTA_LIMIT" or not state.quota_detected_at:
             state.quota_detected_at = time.time()
-        state.status="QUOTA_LIMIT"
-        state.last_error=reason
-        state.paused_until=0.0  # quota expiry is detected by checking Flow's own banner, not a guessed cooldown
-        state.quota_next_probe_at=time.time()+FLOW_QUOTA_RECHECK_INTERVAL_SECONDS
+        state.status = "QUOTA_LIMIT"
+        state.last_error = reason
+        state.paused_until = 0.0  # quota expiry is detected by checking Flow's own banner, not a guessed cooldown
+        state.quota_next_probe_at = time.time() + FLOW_QUOTA_RECHECK_INTERVAL_SECONDS
         self._save_persistent_session_usage()
         log.warning(
             "[Flow Account] %s исключён из генерации из-за лимита Flow Agent; следующая проверка сброса лимита примерно через %s мин.",
@@ -6953,7 +7171,7 @@ class FlowAccountManager:
         due = [
             p for p in self.profiles
             if self.states[p["name"]].status == "QUOTA_LIMIT"
-            and (force or self.states[p["name"]].quota_next_probe_at <= now)
+               and (force or self.states[p["name"]].quota_next_probe_at <= now)
         ]
         recovered: list[str] = []
         for profile in due:
@@ -6996,7 +7214,8 @@ class FlowAccountManager:
                 self.mark_suspicious_activity(name, str(exc))
             except FlowPolicyBlockError as exc:
                 self.mark_policy_block(name, str(exc))
-                log.warning("[Flow Quota Check] %s требует проверки/подтверждения; не использую его для генерации.", name)
+                log.warning("[Flow Quota Check] %s требует проверки/подтверждения; не использую его для генерации.",
+                            name)
             except Exception as exc:
                 # A network/CDP failure is not evidence that the quota cleared.
                 state.status = "QUOTA_LIMIT"
@@ -7052,8 +7271,8 @@ class FlowAccountManager:
                 eligible = [
                     p for p in self.profiles
                     if self.can_do(p, kind)
-                    and self.states[p["name"]].status in {"READY", "WORKING"}
-                    and self.states[p["name"]].paused_until <= now
+                       and self.states[p["name"]].status in {"READY", "WORKING"}
+                       and self.states[p["name"]].paused_until <= now
                 ]
                 if eligible:
                     return True
@@ -7077,7 +7296,7 @@ class FlowAccountManager:
             await asyncio.sleep(max(1.0, min(60.0, next_probe - now if next_probe > now else 1.0)))
 
     def snapshot(self) -> dict[str, Any]:
-        return {name: asdict(state) for name,state in self.states.items()}
+        return {name: asdict(state) for name, state in self.states.items()}
 
 
 # ============================================================================
@@ -7088,8 +7307,8 @@ class FlowAccountManager:
 def cdp_alive(port: int) -> bool:
     try:
         with urllib.request.urlopen(
-            f"http://127.0.0.1:{port}/json/version",
-            timeout=2,
+                f"http://127.0.0.1:{port}/json/version",
+                timeout=2,
         ) as response:
             return response.status == 200
     except Exception:
@@ -7201,6 +7420,7 @@ def close_chrome_profile_process(profile: dict[str, Any], timeout: float = 18.0)
         except Exception:
             pass
     log.info("🧹 [Chrome] Профиль %s остановлен", profile["name"])
+
 
 def _calculate_flow_window_position(work_area: tuple[int, int, int, int]) -> tuple[int, int]:
     """Calculate the Chrome position while leaving its draggable top strip visible."""
@@ -7721,7 +7941,8 @@ class FlowController:
                                 continue
                             label = re.sub(
                                 r"\s+", " ",
-                                (await button.inner_text(timeout=700) or await button.get_attribute("aria-label") or "").strip(),
+                                (await button.inner_text(timeout=700) or await button.get_attribute(
+                                    "aria-label") or "").strip(),
                             )
                             # Normalize accents/case before matching labels such as Polish
                             # "Odrzuć wszystkie" and Spanish "Rechazar todas".
@@ -7851,8 +8072,8 @@ class FlowController:
                         return control
                     # In the known Flow component, the button wrapper carries this class.
                     for selector in (
-                        'xpath=ancestor::*[contains(@class,"create-session-button")][1]',
-                        "xpath=..",
+                            'xpath=ancestor::*[contains(@class,"create-session-button")][1]',
+                            "xpath=..",
                     ):
                         try:
                             candidate = label.locator(selector)
@@ -7963,12 +8184,12 @@ class FlowController:
 
         existing = registry.get(profile_name)
         if (
-            isinstance(existing, dict)
-            and str(existing.get("ui_version", "")) == FLOW_NEW_SESSION_UI_VERSION
-            and (
+                isinstance(existing, dict)
+                and str(existing.get("ui_version", "")) == FLOW_NEW_SESSION_UI_VERSION
+                and (
                 not FLOW_NEW_SESSION_PER_BROWSER_OPEN
                 or str(existing.get("browser_instance_id", "")) == browser_identity
-            )
+        )
         ):
             log.info(
                 "[Flow Session] %s: History/Create new session уже обработан для этого Chrome (%s); пропускаю повторный клик.",
@@ -8040,7 +8261,7 @@ class FlowController:
         return cleared, preserved
 
     async def _recover_from_generic_flow_error(
-        self, kind: str, marker: str, cooldown_seconds: float = 0.0,
+            self, kind: str, marker: str, cooldown_seconds: float = 0.0,
     ) -> None:
         """Recover a Flow transient/throttling error without wiping Google sign-in."""
         is_rate_limit = "rate limit" in str(marker).casefold() or cooldown_seconds > 0
@@ -8111,11 +8332,11 @@ class FlowController:
         )
 
     async def check_for_generation_rejection(
-        self,
-        baseline_body: str,
-        kind: str,
-        allow_audio_failure_if_media_found: bool = False,
-        media_found: bool = False,
+            self,
+            baseline_body: str,
+            kind: str,
+            allow_audio_failure_if_media_found: bool = False,
+            media_found: bool = False,
     ) -> None:
         """Detect new Flow errors; optionally keep trying download for a known video result.
 
@@ -8376,7 +8597,8 @@ class FlowController:
         if consent_dismissed:
             await self._wait_for_flow_document_ready(FLOW_PAGE_READY_TIMEOUT_SECONDS)
         await self.ensure_project_feed()
-        consent_dismissed = await self._dismiss_flow_cookie_consent("after project feed navigation") or consent_dismissed
+        consent_dismissed = await self._dismiss_flow_cookie_consent(
+            "after project feed navigation") or consent_dismissed
         if consent_dismissed:
             await self._wait_for_flow_document_ready(FLOW_PAGE_READY_TIMEOUT_SECONDS)
 
@@ -8401,7 +8623,8 @@ class FlowController:
                 pass
             await asyncio.sleep(0.15)
 
-        raise FlowTechnicalError(f"Не появился редактор промпта для режима {wanted} за {int(FLOW_PROMPT_EDITOR_WAIT_SECONDS)} секунд")
+        raise FlowTechnicalError(
+            f"Не появился редактор промпта для режима {wanted} за {int(FLOW_PROMPT_EDITOR_WAIT_SECONDS)} секунд")
 
     async def prompt_box(self):
         deadline = time.time() + FLOW_PROMPT_BOX_WAIT_SECONDS
@@ -8459,7 +8682,8 @@ class FlowController:
                 item = inputs.nth(index)
                 try:
                     accept = (await item.get_attribute("accept") or "").casefold()
-                    if accept and not any(token in accept for token in ("image", ".jpg", ".jpeg", ".png", ".webp", "*/*")):
+                    if accept and not any(
+                            token in accept for token in ("image", ".jpg", ".jpeg", ".png", ".webp", "*/*")):
                         continue
                     multiple = await item.get_attribute("multiple") is not None
                     score = 2 if "image" in accept or "*/*" in accept else 1
@@ -8532,7 +8756,6 @@ class FlowController:
             return True
         except Exception:
             return False
-
 
     async def _click_upload_action(self, file_path: Path) -> None:
         """Choose a local file through Playwright's file-chooser event, closing Windows' picker automatically."""
@@ -8676,9 +8899,9 @@ class FlowController:
                 if not await text_item.is_visible():
                     continue
                 for selector in (
-                    "xpath=ancestor::button[1]",
-                    "xpath=ancestor::*[@role='button'][1]",
-                    "xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' mat-mdc-button-base ')][1]",
+                        "xpath=ancestor::button[1]",
+                        "xpath=ancestor::*[@role='button'][1]",
+                        "xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' mat-mdc-button-base ')][1]",
                 ):
                     try:
                         parent = text_item.locator(selector)
@@ -8691,7 +8914,7 @@ class FlowController:
         return None
 
     async def _click_add_to_prompt_if_present(
-        self, timeout: float | None = 12.0, max_clicks: int | None = 2
+            self, timeout: float | None = 12.0, max_clicks: int | None = 2
     ) -> bool:
         """Click Add-to-prompt with bounded retries and verify the picker closes.
 
@@ -8775,11 +8998,12 @@ class FlowController:
         """Select the named asset from the picker to insert it into the Agent composer."""
         # The provided DOM shows .asset-title inside .asset-text. Clicking the text
         # bubbles to the card in most Flow builds; then try the row and clickable parent.
-        row = title.locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' asset-text ')][1]")
+        row = title.locator(
+            "xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' asset-text ')][1]")
         candidates = [title, row]
         for ancestor_selector in (
-            "xpath=ancestor::button[1]",
-            "xpath=ancestor::*[@role='button'][1]",
+                "xpath=ancestor::button[1]",
+                "xpath=ancestor::*[@role='button'][1]",
         ):
             try:
                 ancestor = title.locator(ancestor_selector)
@@ -8802,7 +9026,7 @@ class FlowController:
         )
 
     async def _verify_reference_selected(
-        self, filename: str, baseline_images: int, timeout: float = 5.0
+            self, filename: str, baseline_images: int, timeout: float = 5.0
     ) -> bool:
         """Verify that selecting the asset left the picker and/or added it to the composer."""
         deadline = time.monotonic() + max(0.0, timeout)
@@ -8915,7 +9139,7 @@ class FlowController:
             await asyncio.sleep(0.2)
             add_clicked = await self._click_add_to_prompt_if_present(timeout=None, max_clicks=None)
             if await self._verify_reference_selected(
-                path.name, baseline_images_for_selection, timeout=2.5
+                    path.name, baseline_images_for_selection, timeout=2.5
             ):
                 log.info("[Flow Reference] ✅ Эталон выбран и подтверждён в чате Agent: %s", path.name)
                 continue
@@ -8958,7 +9182,7 @@ class FlowController:
             await asyncio.sleep(0.2)
             await self._click_add_to_prompt_if_present(timeout=None, max_clicks=None)
             if not await self._verify_reference_selected(
-                path.name, baseline_images_for_selection, timeout=4.0
+                    path.name, baseline_images_for_selection, timeout=4.0
             ):
                 try:
                     await self.page.keyboard.press("Escape")
@@ -9045,11 +9269,11 @@ class FlowController:
         return result
 
     async def find_new_video_tile(
-        self,
-        old_srcs: set[str],
-        timeout: int = FLOW_VIDEO_GENERATION_TIMEOUT,
-        baseline_body: str = "",
-        old_image_srcs: set[str] | None = None,
+            self,
+            old_srcs: set[str],
+            timeout: int = FLOW_VIDEO_GENERATION_TIMEOUT,
+            baseline_body: str = "",
+            old_image_srcs: set[str] | None = None,
     ):
         """Find a new generated video using its actual <video src> first.
 
@@ -9116,8 +9340,8 @@ class FlowController:
                         except Exception:
                             state = {"readyState": 0, "width": 0, "height": 0, "currentSrc": src}
                         if not state.get("currentSrc") or (
-                            int(state.get("readyState", 0)) < 1
-                            and (int(state.get("width", 0)) <= 0 or int(state.get("height", 0)) <= 0)
+                                int(state.get("readyState", 0)) < 1
+                                and (int(state.get("width", 0)) <= 0 or int(state.get("height", 0)) <= 0)
                         ):
                             log.debug("[Flow] Новый video src обнаружен, жду метаданные плеера: %s", src[:90])
                             continue
@@ -9214,7 +9438,8 @@ class FlowController:
                             continue
                         viewport_height = int(await self.page.evaluate("() => window.innerHeight"))
                         if box["y"] + box["height"] <= 0 or box["y"] >= viewport_height:
-                            log.debug("[Flow] Миниатюра вне экрана после прокрутки: y=%.0f h=%.0f", box["y"], box["height"])
+                            log.debug("[Flow] Миниатюра вне экрана после прокрутки: y=%.0f h=%.0f", box["y"],
+                                      box["height"])
                             continue
                         log.info(
                             "[Flow] Новая video thumbnail в области видимости: x=%.0f y=%.0f w=%.0f h=%.0f",
@@ -9417,7 +9642,8 @@ class FlowController:
                     continue
                 # Same gallery-only limits used by the scanner. In particular, never
                 # return the small image preview embedded in the right-side Agent chat.
-                if (float(box["x"]) > min(650, float(await self.page.evaluate("() => window.innerWidth || 1020")) * 0.64)
+                if (float(box["x"]) > min(650,
+                                          float(await self.page.evaluate("() => window.innerWidth || 1020")) * 0.64)
                         or float(box["width"]) < 200 or float(box["height"]) < 100):
                     continue
                 distance = abs(float(box["x"]) - expected_x) + abs(float(box["y"]) - expected_y)
@@ -9429,7 +9655,6 @@ class FlowController:
             return None
         matches.sort(key=lambda entry: entry[0])
         return matches[0][1]
-
 
     async def snapshot_image_tiles(self) -> set[str]:
         """Snapshot image URLs/signatures from Flow's left media gallery only."""
@@ -9444,11 +9669,11 @@ class FlowController:
         return result
 
     async def find_new_image_tile(
-        self,
-        old_srcs: set[str],
-        timeout: int = FLOW_IMAGE_GENERATION_TIMEOUT,
-        baseline_body: str = "",
-        reference_images: list[Path] | None = None,
+            self,
+            old_srcs: set[str],
+            timeout: int = FLOW_IMAGE_GENERATION_TIMEOUT,
+            baseline_body: str = "",
+            reference_images: list[Path] | None = None,
     ):
         started = time.time()
         last_report = 0
@@ -9488,7 +9713,8 @@ class FlowController:
                 log.info(
                     "✅ [Flow] Новое изображение распознано: x=%.0f y=%.0f w=%.0f h=%.0f | observed=%s new_src=%s | %s",
                     item.get("x", 0), item.get("y", 0), item.get("width", 0), item.get("height", 0),
-                    item.get("observed", False), str(item.get("src", "")) not in old_srcs, str(item.get("src", ""))[:100],
+                    item.get("observed", False), str(item.get("src", "")) not in old_srcs,
+                    str(item.get("src", ""))[:100],
                 )
                 # Resolve the exact image by currentSrc + geometry. Do not use nth(index):
                 # Flow can insert the Agent-side preview between the scan and this click,
@@ -9567,8 +9793,9 @@ class FlowController:
                 # Images must belong to the left All media gallery. A small copy in the
                 # Agent sidebar opens Chrome's native "open/save image" menu instead.
                 if tile_tag == "img" and (
-                    float(box["x"]) > min(650, float(await self.page.evaluate("() => window.innerWidth || 1020")) * 0.64)
-                    or width < 200 or height < 100
+                        float(box["x"]) > min(650,
+                                              float(await self.page.evaluate("() => window.innerWidth || 1020")) * 0.64)
+                        or width < 200 or height < 100
                 ):
                     log.debug(
                         "[Flow Download] Пропускаю IMG вне галереи/слишком маленький: x=%.0f y=%.0f w=%.0f h=%.0f",
@@ -9592,7 +9819,8 @@ class FlowController:
                 download = await self.find_download_label()
                 if download is not None:
                     if index:
-                        log.info("[Flow Download] Меню «Скачать» открыто через контейнер результата (ancestor=%s).", index)
+                        log.info("[Flow Download] Меню «Скачать» открыто через контейнер результата (ancestor=%s).",
+                                 index)
                     return download
                 try:
                     await self.page.keyboard.press("Escape")
@@ -9607,8 +9835,8 @@ class FlowController:
         return None
 
     async def wait_output_ready(
-        self, tile, timeout: int = FLOW_GENERATION_TIMEOUT,
-        baseline_body: str = "", kind: str = "video",
+            self, tile, timeout: int = FLOW_GENERATION_TIMEOUT,
+            baseline_body: str = "", kind: str = "video",
     ):
         started = time.time()
         last_report = 0
@@ -9643,8 +9871,8 @@ class FlowController:
         raise FlowTechnicalError(f"Вывод не стал доступен для скачивания за {timeout}s")
 
     async def open_download_menu(
-        self, tile, timeout: int = FLOW_GENERATION_TIMEOUT,
-        baseline_body: str = "", kind: str = "video",
+            self, tile, timeout: int = FLOW_GENERATION_TIMEOUT,
+            baseline_body: str = "", kind: str = "video",
     ):
         return await self.wait_output_ready(
             tile, timeout=timeout, baseline_body=baseline_body, kind=kind,
@@ -9707,8 +9935,8 @@ class FlowController:
         return await download_info.value
 
     async def _generate_ready_tile_with_retry(
-        self, kind: str, prompt: str, attempt_limit: int | None = None,
-        reference_images: list[Path] | None = None,
+            self, kind: str, prompt: str, attempt_limit: int | None = None,
+            reference_images: list[Path] | None = None,
     ):
         """Retry technical stalls and rewrite refused prompts into safer alternatives."""
         if kind == "video":
@@ -9729,8 +9957,8 @@ class FlowController:
         # Remember whether this is an intro prompt. Gemini/Flow may rewrite it after
         # a rejection, but the silent-mouth visual restriction must survive every retry.
         intro_silent_visual = (
-            kind == "video"
-            and FLOW_INTRO_SILENT_VISUAL_POLICY_MARKER.casefold() in str(prompt or "").casefold()
+                kind == "video"
+                and FLOW_INTRO_SILENT_VISUAL_POLICY_MARKER.casefold() in str(prompt or "").casefold()
         )
         configured_attempts = FLOW_GENERATION_RETRIES_PER_PROFILE + 1
         standard_attempt_limit = max(1, min(configured_attempts, int(attempt_limit or configured_attempts)))
@@ -9933,7 +10161,8 @@ class FlowController:
                     )
                     rewritten_prompt = make_policy_safe_fallback_prompt(prompt, kind, policy_rewrites_used)
 
-                if not rewritten_prompt or re.sub(r"\s+", " ", rewritten_prompt).strip() == re.sub(r"\s+", " ", prompt).strip():
+                if not rewritten_prompt or re.sub(r"\s+", " ", rewritten_prompt).strip() == re.sub(r"\s+", " ",
+                                                                                                   prompt).strip():
                     rewritten_prompt = make_policy_safe_fallback_prompt(prompt, kind, policy_rewrites_used)
                 prompt = rewritten_prompt
                 if intro_silent_visual:
@@ -9974,7 +10203,8 @@ class FlowController:
                             baseline_body=baseline_body,
                             kind=kind,
                         )
-                        log.info("✅ [Flow Media Recovery] Готовый %s восстановлен без повторной отправки промпта.", kind.upper())
+                        log.info("✅ [Flow Media Recovery] Готовый %s восстановлен без повторной отправки промпта.",
+                                 kind.upper())
                         return candidate_tile, recovered_menu
                     except Exception as menu_recovery_exc:
                         log.warning(
@@ -10041,8 +10271,8 @@ class FlowController:
         ) from last_error
 
     async def generate_video_to_file(
-        self, prompt: str, final_path: Path, attempt_limit: int | None = None,
-        reference_images: list[Path] | None = None,
+            self, prompt: str, final_path: Path, attempt_limit: int | None = None,
+            reference_images: list[Path] | None = None,
     ) -> Path:
         """Generate a Flow video; prefer the upscaled download, then fall back to native.
 
@@ -10161,7 +10391,8 @@ class FlowController:
             )
 
         raw_tmp = final_path.with_suffix(".raw.part.mp4")
-        log.info("[Flow Download] Запасной вариант после апскейла: '%s' (timeout=%ss).", chosen_label, FLOW_DOWNLOAD_TIMEOUT)
+        log.info("[Flow Download] Запасной вариант после апскейла: '%s' (timeout=%ss).", chosen_label,
+                 FLOW_DOWNLOAD_TIMEOUT)
         try:
             dl = await self.wait_download_from_click(
                 lambda: chosen.click(timeout=10_000), timeout=FLOW_DOWNLOAD_TIMEOUT,
@@ -10185,8 +10416,8 @@ class FlowController:
         return final_path
 
     async def generate_image_to_file(
-        self, prompt: str, final_path: Path, attempt_limit: int | None = None,
-        reference_images: list[Path] | None = None,
+            self, prompt: str, final_path: Path, attempt_limit: int | None = None,
+            reference_images: list[Path] | None = None,
     ) -> Path:
         """Download a generated image at high resolution when available.
 
@@ -10361,16 +10592,15 @@ class FlowController:
         return await save_image_download(dl, f"{native_label} (запасная загрузка)")
 
 
-
 # ============================================================================
 # FLOW GENERATION WITH CHECKPOINT / ACCOUNT FAILOVER
 # ============================================================================
 
 
 def rewrite_flow_prompt_after_audio_failure(
-    original_prompt: str,
-    failure_text: str = "",
-    rewrite_index: int = 1,
+        original_prompt: str,
+        failure_text: str = "",
+        rewrite_index: int = 1,
 ) -> str:
     """Preserve the visible story but remove audio complexity after Flow audio failure.
 
@@ -10408,7 +10638,8 @@ CURRENT VISUAL PROMPT:
     try:
         rewritten = call_text_api(request) or ""
     except Exception as exc:
-        log.warning("[Flow Audio Rewrite] Текстовый провайдер не ответил: %s; использую локальный silent fallback.", str(exc)[:180])
+        log.warning("[Flow Audio Rewrite] Текстовый провайдер не ответил: %s; использую локальный silent fallback.",
+                    str(exc)[:180])
 
     if rewritten:
         rewritten = re.sub(
@@ -10417,7 +10648,8 @@ CURRENT VISUAL PROMPT:
         ).strip().strip('`').strip().strip('"').strip()
         old_norm = re.sub(r"\s+", " ", core).casefold()
         new_norm = re.sub(r"\s+", " ", _flow_prompt_core(rewritten)).casefold()
-        if len(new_norm) >= 30 and new_norm != old_norm and difflib.SequenceMatcher(None, old_norm, new_norm).ratio() < 0.97:
+        if len(new_norm) >= 30 and new_norm != old_norm and difflib.SequenceMatcher(None, old_norm,
+                                                                                    new_norm).ratio() < 0.97:
             finalized = _finish_rewritten_flow_prompt(rewritten, original_prompt, "video")
             finalized = apply_youtube_content_safety_rules(finalized, "video")
             finalized = apply_visible_text_language_rule(finalized, _infer_prompt_text_language(original_prompt))
@@ -10441,7 +10673,8 @@ CURRENT VISUAL PROMPT:
         re.IGNORECASE,
     )
     sentences = re.split(r"(?<=[.!?])\s+|\n+", core)
-    visual_sentences = [sentence.strip() for sentence in sentences if sentence.strip() and not audio_terms.search(sentence)]
+    visual_sentences = [sentence.strip() for sentence in sentences if
+                        sentence.strip() and not audio_terms.search(sentence)]
     fallback_core = " ".join(visual_sentences).strip()
     if len(fallback_core) < 40:
         fallback_core = core
@@ -10456,10 +10689,10 @@ CURRENT VISUAL PROMPT:
 
 
 def rewrite_flow_prompt_after_technical_failure(
-    original_prompt: str,
-    failure_text: str = "",
-    media_kind: str = "video",
-    rewrite_index: int = 1,
+        original_prompt: str,
+        failure_text: str = "",
+        media_kind: str = "video",
+        rewrite_index: int = 1,
 ) -> str:
     """Ask Gemini for a materially simpler, technically robust prompt after profile failover.
 
@@ -10500,21 +10733,25 @@ CURRENT PROMPT:
 {core[:5000]}""".strip()
     rewritten = call_text_api(request)
     if rewritten:
-        rewritten = re.sub(r"^(?:revised\s+prompt|rewritten\s+prompt|video\s+prompt|prompt)\s*:\s*", "", rewritten.strip(), flags=re.IGNORECASE)
+        rewritten = re.sub(r"^(?:revised\s+prompt|rewritten\s+prompt|video\s+prompt|prompt)\s*:\s*", "",
+                           rewritten.strip(), flags=re.IGNORECASE)
         rewritten = rewritten.strip().strip('`').strip().strip('"').strip()
         old_norm = re.sub(r"\s+", " ", _flow_prompt_core(core)).casefold()
         new_norm = re.sub(r"\s+", " ", _flow_prompt_core(rewritten)).casefold()
-        if len(new_norm) >= 30 and new_norm != old_norm and difflib.SequenceMatcher(None, old_norm, new_norm).ratio() < 0.94:
+        if len(new_norm) >= 30 and new_norm != old_norm and difflib.SequenceMatcher(None, old_norm,
+                                                                                    new_norm).ratio() < 0.94:
             finalized = _finish_rewritten_flow_prompt(rewritten, original_prompt, media_kind)
             finalized = apply_youtube_content_safety_rules(finalized, media_kind)
             finalized = apply_visible_text_language_rule(finalized, _infer_prompt_text_language(original_prompt))
             finalized = enforce_selected_visual_style(finalized, media_kind)
             if media_kind == "video":
                 finalized = enforce_flow_ambience_only_audio(finalized)
-            log.info("[Flow Technical Rewrite] Gemini подготовил упрощённый промпт #%s (%s символов).", rewrite_index, len(finalized))
+            log.info("[Flow Technical Rewrite] Gemini подготовил упрощённый промпт #%s (%s символов).", rewrite_index,
+                     len(finalized))
             return finalized
 
-    log.warning("[Flow Technical Rewrite] Gemini не вернул существенно упрощённый промпт; применяю безопасный простой fallback.")
+    log.warning(
+        "[Flow Technical Rewrite] Gemini не вернул существенно упрощённый промпт; применяю безопасный простой fallback.")
     fallback = make_policy_safe_fallback_prompt(original_prompt, media_kind, rewrite_index)
     fallback = apply_visible_text_language_rule(
         apply_youtube_content_safety_rules(fallback, media_kind),
@@ -10527,16 +10764,16 @@ CURRENT PROMPT:
 
 
 async def generate_flow_with_failover(
-    manager: FlowAccountManager,
-    playwright,
-    kind: str,
-    prompt: str,
-    target_file: Path,
-    preferred_account: str | None = None,
-    reference_images: list[Path] | None = None,
-    _rewrite_round: int = 0,
-    _attempt_key_suffix: str = "",
-    _audio_rewrite_round: int = 0,
+        manager: FlowAccountManager,
+        playwright,
+        kind: str,
+        prompt: str,
+        target_file: Path,
+        preferred_account: str | None = None,
+        reference_images: list[Path] | None = None,
+        _rewrite_round: int = 0,
+        _attempt_key_suffix: str = "",
+        _audio_rewrite_round: int = 0,
 ) -> tuple[Path, str]:
     """Generate with bounded retries, one general simplification pass, and one audio-silent fallback.
 
@@ -10564,7 +10801,8 @@ async def generate_flow_with_failover(
     # Videos get two technical submissions per available profile before Gemini is asked
     # to simplify. Images retain the existing smaller four-submission budget.
     max_target_attempts = (
-        max(FLOW_MAX_TOTAL_GENERATION_ATTEMPTS, (FLOW_GENERATION_RETRIES_PER_PROFILE + 1) * max(1, len(manager.profiles)))
+        max(FLOW_MAX_TOTAL_GENERATION_ATTEMPTS,
+            (FLOW_GENERATION_RETRIES_PER_PROFILE + 1) * max(1, len(manager.profiles)))
         if kind == "video" else FLOW_MAX_TOTAL_GENERATION_ATTEMPTS
     )
     profile_attempts = 0
@@ -10580,8 +10818,8 @@ async def generate_flow_with_failover(
     if _audio_rewrite_round > 0:
         max_profiles_to_try = min(2, max_profiles_to_try)
     while (
-        profile_attempts < max_profiles_to_try
-        and manager.generation_attempts_by_target.get(target_key, 0) < max_target_attempts
+            profile_attempts < max_profiles_to_try
+            and manager.generation_attempts_by_target.get(target_key, 0) < max_target_attempts
     ):
         try:
             profile = await manager.choose_profile(kind, preferred=preferred_account)
@@ -10971,7 +11209,8 @@ async def generate_flow_with_failover(
             f"Проверены: {tried_label}; фактических отправок промпта {used}/"
             f"{max_target_attempts}; последний сбой: {last_error}"
         )
-    if kind == "video" and _rewrite_round < 1 and _audio_rewrite_round == 0 and not isinstance(last_error, FlowAudioGenerationError):
+    if kind == "video" and _rewrite_round < 1 and _audio_rewrite_round == 0 and not isinstance(last_error,
+                                                                                               FlowAudioGenerationError):
         log.warning(
             "[Flow Failover] Не удалось получить видео после попыток на доступных профилях (%s). "
             "Передаю промпт Gemini для одного упрощения и повторю полный цикл профилей.",
@@ -11008,14 +11247,12 @@ async def generate_flow_with_failover(
     raise FlowTechnicalError(message) from last_error
 
 
-
-
 async def ensure_character_reference_images(
-    state: "ProjectState",
-    analysis: dict[str, Any],
-    story_text: str,
-    manager: FlowAccountManager,
-    playwright,
+        state: "ProjectState",
+        analysis: dict[str, Any],
+        story_text: str,
+        manager: FlowAccountManager,
+        playwright,
 ) -> list[dict[str, Any]]:
     """Generate/reuse local identity portraits for primary characters only."""
     bible = analysis.get("character_bible", {}) if isinstance(analysis, dict) else {}
@@ -11028,6 +11265,7 @@ async def ensure_character_reference_images(
     setting_context = analysis.get("context", {}) if isinstance(analysis.get("context", {}), dict) else {}
     created_or_reused: list[dict[str, Any]] = []
     changed = False
+
     # Persist the selected cast and demote stale primary labels from previous runs.
     # Otherwise an old reference that is no longer in the chosen top cast could still
     # be attached to prompts merely because its priority/path remained in the bible.
@@ -11041,7 +11279,7 @@ async def ensure_character_reference_images(
         key = _stable_character_key(item)
         desired_priority = "primary" if key in selected_cast_keys else (
             "supporting" if str(item.get("visual_reference_priority", "")).casefold()
-            in {"primary", "main", "protagonist", "главный", "главная", "главные"}
+                            in {"primary", "main", "protagonist", "главный", "главная", "главные"}
             else item.get("visual_reference_priority", "supporting")
         )
         if item.get("visual_reference_priority") != desired_priority:
@@ -11248,22 +11486,23 @@ class ProjectState:
         # Files on disk are the source of truth for resume. This is deliberately
         # broader than state.json so an interrupted run can recover after a
         # crash between download and state.save().
-        audio_path=Path(self.data["audio"]["path"])
+        audio_path = Path(self.data["audio"]["path"])
         if is_valid_audio(audio_path):
-            self.data["audio"]["done"]=True
+            self.data["audio"]["done"] = True
 
-        whisper=self.data["whisper"]
+        whisper = self.data["whisper"]
         if Path(whisper["subtitle_path"]).exists() and Path(whisper["segments_path"]).exists():
-            whisper["done"]=True
+            whisper["done"] = True
 
-        analysis=self.data["analysis"]
-        analysis["done"]=bool(analysis.get("characters") is not None and analysis.get("context") is not None and (analysis.get("characters") or analysis.get("context")))
+        analysis = self.data["analysis"]
+        analysis["done"] = bool(analysis.get("characters") is not None and analysis.get("context") is not None and (
+                    analysis.get("characters") or analysis.get("context")))
 
-        intro=self.data["intro"]
+        intro = self.data["intro"]
         if intro.get("enabled"):
             # Recover individual intro clip list from disk even when a crash
             # happened before the previous state.save().
-            recovered=[]
+            recovered = []
             for p in sorted(self.media_dir.glob("intro_clip_*.mp4")):
                 if is_valid_video(p):
                     recovered.append(str(p))
@@ -11285,39 +11524,39 @@ class ProjectState:
                 ) or intro.get("actual_duration", 0.0)
 
         # Recover scene records by index and by actual files.
-        records={}
-        for item in self.data.get("main_clips",[]):
+        records = {}
+        for item in self.data.get("main_clips", []):
             try:
-                records[int(item["index"])]=dict(item)
+                records[int(item["index"])] = dict(item)
             except Exception:
                 pass
 
         for p in self.media_dir.glob("scene_*.mp4"):
-            m=re.search(r"scene_(\d+)\.mp4$",p.name,re.I)
+            m = re.search(r"scene_(\d+)\.mp4$", p.name, re.I)
             if not m: continue
-            idx=int(m.group(1))-1
-            rec=records.setdefault(idx,{"index":idx})
-            rec["output_path"]=str(p)
-            if is_valid_video(p): rec["done"]=True
+            idx = int(m.group(1)) - 1
+            rec = records.setdefault(idx, {"index": idx})
+            rec["output_path"] = str(p)
+            if is_valid_video(p): rec["done"] = True
         for p in self.media_dir.glob("scene_*.jpg"):
-            m=re.search(r"scene_(\d+)\.jpg$",p.name,re.I)
+            m = re.search(r"scene_(\d+)\.jpg$", p.name, re.I)
             if not m: continue
-            idx=int(m.group(1))-1
-            rec=records.setdefault(idx,{"index":idx})
-            rec["image_path"]=str(p)
+            idx = int(m.group(1)) - 1
+            rec = records.setdefault(idx, {"index": idx})
+            rec["image_path"] = str(p)
 
         if records:
-            self.data["main_clips"]=[records[k] for k in sorted(records)]
+            self.data["main_clips"] = [records[k] for k in sorted(records)]
 
         thumbs = self.data.get("thumbnails", [])
         for thumb in thumbs:
-            path=Path(thumb.get("path",""))
-            thumb["done"]=is_valid_image(path)
+            path = Path(thumb.get("path", ""))
+            thumb["done"] = is_valid_image(path)
 
         # If thumbnails were downloaded before their state was written, recover
         # them from the output folder.
         if not thumbs:
-            recovered_thumbs=[]
+            recovered_thumbs = []
             for p in sorted(self.project_folder.rglob("Thumb*_Flow_2K.jpg")):
                 recovered_thumbs.append({
                     "index": len(recovered_thumbs),
@@ -11328,14 +11567,14 @@ class ProjectState:
             if recovered_thumbs:
                 self.data["thumbnails"] = recovered_thumbs
 
-        final_video=str(self.data["final"].get("video",""))
-        self.data["final"]["done"]=bool(final_video and is_valid_video(Path(final_video)))
+        final_video = str(self.data["final"].get("video", ""))
+        self.data["final"]["done"] = bool(final_video and is_valid_video(Path(final_video)))
 
         # Intermediate montage outputs are also resumable.
-        for key in ("no_audio","with_audio"):
-            value=str(self.data["montage"].get(key,""))
+        for key in ("no_audio", "with_audio"):
+            value = str(self.data["montage"].get(key, ""))
             if value and is_valid_video(Path(value)):
-                self.data["montage"]["done"]=True
+                self.data["montage"]["done"] = True
 
         self.save()
 
@@ -11376,7 +11615,8 @@ def extract_whisper_sentences(segments, start_time: float, audio_duration: float
                 if words:
                     raw_words.extend(words)
                 elif str(segment.get("text", "")).strip():
-                    raw_words.append({"start": segment.get("start", 0.0), "end": segment.get("end", 0.0), "word": segment.get("text", "")})
+                    raw_words.append({"start": segment.get("start", 0.0), "end": segment.get("end", 0.0),
+                                      "word": segment.get("text", "")})
     words = []
     for item in raw_words or []:
         try:
@@ -11416,8 +11656,8 @@ def _semantic_boundary_time(left: dict, right: dict) -> tuple[float, float]:
 
 
 def calculate_pause_aligned_intervals(
-    segments, audio_duration: float, start_time: float, min_dur: float = 8.0,
-    target_dur: float = 15.0, max_dur: float = 22.0,
+        segments, audio_duration: float, start_time: float, min_dur: float = 8.0,
+        target_dur: float = 15.0, max_dur: float = 22.0,
 ) -> list[dict[str, Any]]:
     """Deterministic local fallback: cut only at sentence/pause boundaries."""
     sentences = extract_whisper_sentences(segments, start_time, audio_duration)
@@ -11441,7 +11681,8 @@ def calculate_pause_aligned_intervals(
                 if dur >= target_dur:
                     break
         if best == cursor + 1 and cursor + 1 < len(sentences):
-            while best < len(sentences) and float(sentences[best - 1]["end"]) - float(sentences[cursor]["start"]) < min_dur:
+            while best < len(sentences) and float(sentences[best - 1]["end"]) - float(
+                    sentences[cursor]["start"]) < min_dur:
                 best += 1
         groups.append(sentences[cursor:best])
         cursor = best
@@ -11468,7 +11709,8 @@ def calculate_pause_aligned_intervals(
     for interval in result:
         pending = dict(interval)
         while float(pending["end"]) - float(pending["start"]) > 22.0:
-            left = float(pending["start"]); right = float(pending["end"])
+            left = float(pending["start"]);
+            right = float(pending["end"])
             target = (left + right) / 2.0
             cut = _nearest_whisper_cut(segments, target, left + 5.5, right - 5.5)
             if cut <= left + 0.05 or cut >= right - 0.05:
@@ -11487,8 +11729,8 @@ def calculate_pause_aligned_intervals(
 
 
 def fit_semantic_scene_count(
-    scenes: list[dict[str, Any]], segments, target_count: int,
-    start_time: float, audio_duration: float,
+        scenes: list[dict[str, Any]], segments, target_count: int,
+        start_time: float, audio_duration: float,
 ) -> list[dict[str, Any]]:
     """Adjust semantic grouping to an existing project's scene count without extra Flow work."""
     result = [dict(x) for x in scenes]
@@ -11522,7 +11764,8 @@ def fit_semantic_scene_count(
         if not possible:
             break
         midpoint = (float(scene["start"]) + float(scene["end"])) * 0.5
-        split_id = min(possible, key=lambda k: abs((float(by_id[k]["end"]) + float(by_id[k + 1]["start"])) * 0.5 - midpoint))
+        split_id = min(possible,
+                       key=lambda k: abs((float(by_id[k]["end"]) + float(by_id[k + 1]["start"])) * 0.5 - midpoint))
         cut, pause = _semantic_boundary_time(by_id[split_id], by_id[split_id + 1])
         if cut - float(scene["start"]) < 6.5 or float(scene["end"]) - cut < 6.5:
             break
@@ -11541,8 +11784,8 @@ def fit_semantic_scene_count(
 
 
 def plan_semantic_scene_intervals(
-    segments, audio_duration: float, start_time: float, min_dur: float = 8.0,
-    target_dur: float = 15.0, max_dur: float = 22.0,
+        segments, audio_duration: float, start_time: float, min_dur: float = 8.0,
+        target_dur: float = 15.0, max_dur: float = 22.0,
 ) -> list[dict[str, Any]]:
     """Ask the text model for semantic sentence groups; locally validate and align every cut."""
     sentences = extract_whisper_sentences(segments, start_time, audio_duration)
@@ -11569,13 +11812,13 @@ def plan_semantic_scene_intervals(
         target_count = max(1, round(block_duration / target_dur))
         numbered = "\n".join(f'{x["id"]}: {x["text"]}' for x in units)
         prompt = (
-            "Group these numbered Whisper transcript sentences into visual scenes for a documentary. "
-            f"Each scene should last {min_dur:.0f}-{max_dur:.0f} seconds; target about {target_count} scenes "
-            "(acceptable count ±20%). Start a new scene when action, location, character, or time changes. "
-            "Set scene_break=true only for a genuine location, time, or story-act change; aim for roughly 25-35% of scenes, not every sentence boundary. "
-            "Return ONLY strict JSON array: [{\"from\":1,\"to\":3,\"scene_break\":false}, ...]. "
-            "Cover every sentence exactly once, in order, with contiguous ranges. Do not invent IDs.\n"
-            + numbered
+                "Group these numbered Whisper transcript sentences into visual scenes for a documentary. "
+                f"Each scene should last {min_dur:.0f}-{max_dur:.0f} seconds; target about {target_count} scenes "
+                "(acceptable count ±20%). Start a new scene when action, location, character, or time changes. "
+                "Set scene_break=true only for a genuine location, time, or story-act change; aim for roughly 25-35% of scenes, not every sentence boundary. "
+                "Return ONLY strict JSON array: [{\"from\":1,\"to\":3,\"scene_break\":false}, ...]. "
+                "Cover every sentence exactly once, in order, with contiguous ranges. Do not invent IDs.\n"
+                + numbered
         )
         parsed = None
         try:
@@ -11598,7 +11841,8 @@ def plan_semantic_scene_intervals(
                     raise ValueError("scene count outside ±20% target")
                 parsed = checked
         except Exception as exc:
-            log.warning("[Semantic Planning] Блок %s: LLM JSON/coverage invalid (%s); использую локальные паузы.", block_index + 1, exc)
+            log.warning("[Semantic Planning] Блок %s: LLM JSON/coverage invalid (%s); использую локальные паузы.",
+                        block_index + 1, exc)
 
         if parsed is None:
             # Reuse the local pause aligner for this block only; do not make another ASR call.
@@ -11741,34 +11985,34 @@ def plan_semantic_scene_intervals(
 
 
 def calculate_dynamic_slide_intervals(
-    audio_duration: float,
-    start_time: float = 0.0,
-    min_dur: float = SLIDE_MIN_DUR,
-    max_dur: float = SLIDE_MAX_DUR,
+        audio_duration: float,
+        start_time: float = 0.0,
+        min_dur: float = SLIDE_MIN_DUR,
+        max_dur: float = SLIDE_MAX_DUR,
 ) -> list[tuple[float, float]]:
-    intervals=[]
-    current_time=start_time
+    intervals = []
+    current_time = start_time
     while current_time < audio_duration - 0.01:
-        remaining=audio_duration-current_time
+        remaining = audio_duration - current_time
         if remaining <= max_dur:
-            intervals.append((current_time,audio_duration))
+            intervals.append((current_time, audio_duration))
             break
-        target=round(random.uniform(min_dur,max_dur),2)
-        if remaining-target < min_dur*0.65:
-            target=round(remaining/2.0,2)
-        end_time=min(current_time+target,audio_duration)
-        intervals.append((current_time,end_time))
-        current_time=end_time
+        target = round(random.uniform(min_dur, max_dur), 2)
+        if remaining - target < min_dur * 0.65:
+            target = round(remaining / 2.0, 2)
+        end_time = min(current_time + target, audio_duration)
+        intervals.append((current_time, end_time))
+        current_time = end_time
     return intervals
 
 
 def generate_vpy_script(
-    image_path: Path,
-    script_path: Path,
-    frames: int,
-    zoom_dir: str,
-    pan_dir: str,
-    speed_factor: float,
+        image_path: Path,
+        script_path: Path,
+        frames: int,
+        zoom_dir: str,
+        pan_dir: str,
+        speed_factor: float,
 ) -> None:
     safe_path = str(image_path).replace("\\", "/")
     start_scale, end_scale = (1.0, 1.20) if zoom_dir == "in" else (1.20, 1.0)
@@ -11818,52 +12062,61 @@ final_clip.set_output()"""
 
 
 def render_slide(
-    vpy_path: Path,
-    output_path: Path,
-    duration: float,
-    fps: int = FPS,
-    fade_out_dur: float = 0.0,
-    max_retries: int = 2,
+        vpy_path: Path,
+        output_path: Path,
+        duration: float,
+        fps: int = FPS,
+        fade_out_dur: float = 0.0,
+        max_retries: int = 2,
 ) -> bool:
-    for attempt in range(max_retries+1):
+    for attempt in range(max_retries + 1):
         try:
             if not vpy_path.exists():
                 return False
-            temp_out=output_path.with_suffix('.temp.mp4')
-            grain=1 if ACTIVE_VISUAL_STYLE_ID in {"comic_explainer", "cartoon_2d"} else random.randint(*FILM_GRAIN_STRENGTH)
-            contrast=round(random.uniform(*COLOR_CONTRAST_JITTER),3)
-            brightness=round(random.uniform(*COLOR_BRIGHTNESS_JITTER),3)
-            saturation=round(random.uniform(*COLOR_SATURATION_JITTER),3)
-            bitrate=f"{random.randint(*VIDEO_BITRATE_RANGE)}k"
+            temp_out = output_path.with_suffix('.temp.mp4')
+            grain = 1 if ACTIVE_VISUAL_STYLE_ID in {"comic_explainer", "cartoon_2d"} else random.randint(
+                *FILM_GRAIN_STRENGTH)
+            contrast = round(random.uniform(*COLOR_CONTRAST_JITTER), 3)
+            brightness = round(random.uniform(*COLOR_BRIGHTNESS_JITTER), 3)
+            saturation = round(random.uniform(*COLOR_SATURATION_JITTER), 3)
+            bitrate = f"{random.randint(*VIDEO_BITRATE_RANGE)}k"
             log.info(
                 "🎛️ [Монтаж] Grain=%s Contrast=%.3f Brightness=%.3f Saturation=%.3f Bitrate=%s",
-                grain,contrast,brightness,saturation,bitrate,
+                grain, contrast, brightness, saturation, bitrate,
             )
-            vf=f"noise=alls={grain}:allf=t+u,eq=contrast={contrast}:brightness={brightness}:saturation={saturation}"
-            encoder=HW_ENCODER if attempt==0 else 'libx264'
-            preset=ENCODER_PRESET if attempt==0 else 'fast'
-            rc=['-rc','vbr','-b:v',bitrate,'-maxrate','12000k'] if attempt==0 else ['-crf','18','-b:v',bitrate]
+            vf = f"noise=alls={grain}:allf=t+u,eq=contrast={contrast}:brightness={brightness}:saturation={saturation}"
+            encoder = HW_ENCODER if attempt == 0 else 'libx264'
+            preset = ENCODER_PRESET if attempt == 0 else 'fast'
+            rc = ['-rc', 'vbr', '-b:v', bitrate, '-maxrate', '12000k'] if attempt == 0 else ['-crf', '18', '-b:v',
+                                                                                             bitrate]
 
             if shutil.which('vspipe'):
-                p1=subprocess.Popen(['vspipe',str(vpy_path),'-c','y4m','-'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
-                cmd=['ffmpeg','-y','-i','pipe:','-vf',vf,'-c:v',encoder,'-preset',preset,*rc,'-pix_fmt','yuv420p','-r',str(fps),'-t',str(duration),*FFMPEG_CLEAN_META_VIDEO,str(temp_out)]
-                p2=subprocess.Popen(cmd,stdin=p1.stdout,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                p1 = subprocess.Popen(['vspipe', str(vpy_path), '-c', 'y4m', '-'], stdout=subprocess.PIPE,
+                                      stderr=subprocess.DEVNULL)
+                cmd = ['ffmpeg', '-y', '-i', 'pipe:', '-vf', vf, '-c:v', encoder, '-preset', preset, *rc, '-pix_fmt',
+                       'yuv420p', '-r', str(fps), '-t', str(duration), *FFMPEG_CLEAN_META_VIDEO, str(temp_out)]
+                p2 = subprocess.Popen(cmd, stdin=p1.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 p1.stdout.close()
                 try:
-                    p2.wait(timeout=900); p1.wait(timeout=900)
+                    p2.wait(timeout=900);
+                    p1.wait(timeout=900)
                 except subprocess.TimeoutExpired:
-                    p1.kill(); p2.kill(); raise TimeoutError('Таймаут рендера слайда')
-                if p2.returncode!=0:
+                    p1.kill();
+                    p2.kill();
+                    raise TimeoutError('Таймаут рендера слайда')
+                if p2.returncode != 0:
                     raise RuntimeError(f'FFmpeg code {p2.returncode}')
             else:
                 raise RuntimeError('vspipe не найден')
 
-            if fade_out_dur>0:
-                fade=min(float(fade_out_dur), max(0.05,float(duration)-0.05))
-                fade_tmp=output_path.with_suffix('.fade_temp.mp4')
+            if fade_out_dur > 0:
+                fade = min(float(fade_out_dur), max(0.05, float(duration) - 0.05))
+                fade_tmp = output_path.with_suffix('.fade_temp.mp4')
                 subprocess.run(
-                    ['ffmpeg','-y','-i',str(temp_out),'-vf',f'fade=t=out:st={max(0.0,duration-fade):.3f}:d={fade:.3f}','-c:v',encoder,'-preset',preset,*rc,'-pix_fmt','yuv420p','-r',str(fps),*FFMPEG_CLEAN_META_VIDEO,str(fade_tmp)],
-                    check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
+                    ['ffmpeg', '-y', '-i', str(temp_out), '-vf',
+                     f'fade=t=out:st={max(0.0, duration - fade):.3f}:d={fade:.3f}', '-c:v', encoder, '-preset', preset,
+                     *rc, '-pix_fmt', 'yuv420p', '-r', str(fps), *FFMPEG_CLEAN_META_VIDEO, str(fade_tmp)],
+                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 )
                 fade_tmp.replace(output_path)
                 temp_out.unlink(missing_ok=True)
@@ -11871,8 +12124,8 @@ def render_slide(
                 temp_out.replace(output_path)
             return is_valid_video(output_path)
         except Exception as e:
-            log.warning('⚠️ [Монтаж] Ошибка рендера слайда: %s',e)
-            if attempt<max_retries:
+            log.warning('⚠️ [Монтаж] Ошибка рендера слайда: %s', e)
+            if attempt < max_retries:
                 time.sleep(2)
 
     # Last-resort standard FFmpeg still clip; project does not fail just because
@@ -11886,12 +12139,16 @@ def render_slide(
 def image_to_clip(image_path: Path, output_path: Path, duration: float) -> bool:
     """Fallback still renderer with the same visual finish as the primary scene renderer."""
     angle = math.radians(random.choice((-1, 1)) * random.uniform(0.25, 0.45))
-    contrast, brightness, saturation = random.uniform(*COLOR_CONTRAST_JITTER), random.uniform(*COLOR_BRIGHTNESS_JITTER), random.uniform(*COLOR_SATURATION_JITTER)
+    contrast, brightness, saturation = random.uniform(*COLOR_CONTRAST_JITTER), random.uniform(
+        *COLOR_BRIGHTNESS_JITTER), random.uniform(*COLOR_SATURATION_JITTER)
     grain = 1 if ACTIVE_VISUAL_STYLE_ID in {"comic_explainer", "cartoon_2d"} else random.randint(*FILM_GRAIN_STRENGTH)
     vf = f"rotate={angle:.9f}:ow=iw:oh=ih:bilinear=1,crop=iw*0.965:ih*0.965,scale=1920:1080:flags=lanczos,eq=contrast={contrast:.4f}:brightness={brightness:.4f}:saturation={saturation:.4f},noise=alls={grain}:allf=t+u,setsar=1"
     bitrate = f"{random.randint(*VIDEO_BITRATE_RANGE)}k"
-    base = [FFMPEG_BIN, "-y", "-loop", "1", "-i", str(image_path), "-t", f"{duration:.3f}", "-vf", vf, "-r", str(FPS), "-pix_fmt", "yuv420p", "-an"]
-    attempts = [base + ["-c:v", HW_ENCODER, "-preset", ENCODER_PRESET, "-b:v", bitrate, "-maxrate", "12000k", *FFMPEG_CLEAN_META_VIDEO, str(output_path)], base + ["-c:v", "libx264", "-preset", "fast", "-crf", "18", *FFMPEG_CLEAN_META_VIDEO, str(output_path)]]
+    base = [FFMPEG_BIN, "-y", "-loop", "1", "-i", str(image_path), "-t", f"{duration:.3f}", "-vf", vf, "-r", str(FPS),
+            "-pix_fmt", "yuv420p", "-an"]
+    attempts = [base + ["-c:v", HW_ENCODER, "-preset", ENCODER_PRESET, "-b:v", bitrate, "-maxrate", "12000k",
+                        *FFMPEG_CLEAN_META_VIDEO, str(output_path)],
+                base + ["-c:v", "libx264", "-preset", "fast", "-crf", "18", *FFMPEG_CLEAN_META_VIDEO, str(output_path)]]
     for cmd in attempts:
         try:
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=600)
@@ -11900,8 +12157,6 @@ def image_to_clip(image_path: Path, output_path: Path, duration: float) -> bool:
         except Exception:
             output_path.unlink(missing_ok=True)
     return False
-
-
 
 
 def _load_depth_estimator() -> tuple[Any, Any, Any]:
@@ -11966,9 +12221,9 @@ def _depth_cache_is_current(image_path: Path, depth_path: Path, meta_path: Path)
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         stat = image_path.stat()
         return (
-            int(meta.get("source_size", -1)) == stat.st_size
-            and int(meta.get("source_mtime_ns", -1)) == stat.st_mtime_ns
-            and int(meta.get("version", 0)) == 1
+                int(meta.get("source_size", -1)) == stat.st_size
+                and int(meta.get("source_mtime_ns", -1)) == stat.st_mtime_ns
+                and int(meta.get("version", 0)) == 1
         )
     except Exception:
         return False
@@ -12096,7 +12351,6 @@ _LIVING_SUBJECT_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-
 _LIVING_NEGATION_PATTERN = re.compile(
     r"\b(?:no|without|exclude|excluding|avoid|absent|absence\s+of|free\s+of|none|nobody|not\s+visible|not\s+present|not\s+shown|no\s+visible)\b",
     re.IGNORECASE,
@@ -12116,8 +12370,8 @@ def _strip_prompt_boilerplate(text: str) -> str:
                 if snippet:
                     cleaned = cleaned.replace(snippet, " ")
     for sep_pat in (
-        r"(?im)^\s*[-?*]?\s*(?:STYLE LOCK|VISUAL STYLE(?:\s*\([^)]*\))?|VISUAL MEDIUM(?:\s+FIRST)?|NEGATIVE(?: PROMPT)?|CONTENT SAFETY|SAFETY RULES|CAMERA RULES|LANGUAGE RULE|TEXT RULE|AUDIO RULE|DO NOT|AVOID|IMPORTANT|CRITICAL)\s*[:\-]",
-        r"(?i)(?<=[.!?\n])\s*[-?*]?\s*(?:STYLE LOCK|VISUAL STYLE(?:\s*\([^)]*\))?|NEGATIVE(?: PROMPT)?|CONTENT SAFETY|SAFETY RULES|CAMERA RULES)\s*[:\-]",
+            r"(?im)^\s*[-?*]?\s*(?:STYLE LOCK|VISUAL STYLE(?:\s*\([^)]*\))?|VISUAL MEDIUM(?:\s+FIRST)?|NEGATIVE(?: PROMPT)?|CONTENT SAFETY|SAFETY RULES|CAMERA RULES|LANGUAGE RULE|TEXT RULE|AUDIO RULE|DO NOT|AVOID|IMPORTANT|CRITICAL)\s*[:\-]",
+            r"(?i)(?<=[.!?\n])\s*[-?*]?\s*(?:STYLE LOCK|VISUAL STYLE(?:\s*\([^)]*\))?|NEGATIVE(?: PROMPT)?|CONTENT SAFETY|SAFETY RULES|CAMERA RULES)\s*[:\-]",
     ):
         parts = re.split(sep_pat, cleaned, maxsplit=1)
         if len(parts) > 1 and parts[0].strip():
@@ -12128,6 +12382,7 @@ def _strip_prompt_boilerplate(text: str) -> str:
         cleaned,
     )
     return cleaned
+
 
 def _find_positive_living_match(text: str):
     """Find a positive person/animal cue while ignoring common negative/boilerplate prompt text."""
@@ -12150,10 +12405,10 @@ def _find_positive_living_match(text: str):
 
 
 def scene_has_living_subject(
-    record: dict,
-    scene_plan: Any = None,
-    characters: Any = None,
-    image_path: Path | None = None,
+        record: dict,
+        scene_plan: Any = None,
+        characters: Any = None,
+        image_path: Path | None = None,
 ) -> tuple[bool, str]:
     """Classify living subjects from the VISUAL PROMPT only (no face detector).
 
@@ -12200,20 +12455,23 @@ def scene_has_living_subject(
 
 
 def choose_parallax_motion_profile(
-    record: dict,
-    scene_plan: Any,
-    characters: Any,
-    image_path: Path,
-    scene_index: int | None = None,
-    prev_zooms: list[str] | None = None,
-    forced_zoom_dir: str | None = None,
+        record: dict,
+        scene_plan: Any,
+        characters: Any,
+        image_path: Path,
+        scene_index: int | None = None,
+        prev_zooms: list[str] | None = None,
+        forced_zoom_dir: str | None = None,
 ) -> dict[str, Any]:
     """Choose deterministic 2.5D movement; living subjects retain centered calibrated depth."""
     living, reason = scene_has_living_subject(record, scene_plan=scene_plan, characters=characters, image_path=None)
     raw_visual_prompt = " ".join([str(record.get("prompt", "")), str(record.get("visual_prompt", "")),
                                   str(record.get("scene_description", ""))])
-    raw_visual_prompt = re.split(r"(?im)^\s*(?:STYLE LOCK|NEGATIVE(?: PROMPT)?|DO NOT|AVOID|INSTRUCTIONS?)\s*[:\-]", raw_visual_prompt)[0]
-    raw_visual_prompt = re.sub(r"(?i)\b(?:no person|without people|no humans|first-person|third-person|no talking[- ]head)\b", " ", raw_visual_prompt)
+    raw_visual_prompt = \
+    re.split(r"(?im)^\s*(?:STYLE LOCK|NEGATIVE(?: PROMPT)?|DO NOT|AVOID|INSTRUCTIONS?)\s*[:\-]", raw_visual_prompt)[0]
+    raw_visual_prompt = re.sub(
+        r"(?i)\b(?:no person|without people|no humans|first-person|third-person|no talking[- ]head)\b", " ",
+        raw_visual_prompt)
     prompt = raw_visual_prompt.lower()
     landscape_cues = re.compile(
         r"\b(?:landscape|wide shot|panorama|desert|mountain|mountains|valley|plain|road|trail|forest|woods|coast|ocean|sea|river|lake|field|horizon|skyline|cityscape|village|architecture|building|buildings|ruins|temple|castle|fortress|street|courtyard|interior|hall|room|corridor|canyon|cliff|waterfall|bridge|object|objects|still life|пейзаж|горы|пустыня|долина|дорога|лес|река|озеро|море|океан|поле|горизонт|здание|архитектура|руины|замок|улица|двор|интерьер|зал|комната|коридор|предмет)\b",
@@ -12246,7 +12504,8 @@ def choose_parallax_motion_profile(
     turn_direction = rng.choice([-1.0, 1.0])
     return {
         "living_subject": living,
-        "reason": reason if living else ("landscape/environment prompt" if environment_scene else "general visual prompt"),
+        "reason": reason if living else (
+            "landscape/environment prompt" if environment_scene else "general visual prompt"),
         "depth_strength": strength, "zoom_amount": zoom_amount, "profile": profile,
         "pan_dir": pan_dir, "zoom_dir": zoom_dir, "pan_multiplier": pan_multiplier,
         "turn_strength": turn_strength, "turn_direction": turn_direction,
@@ -12254,20 +12513,20 @@ def choose_parallax_motion_profile(
 
 
 def render_parallax_slide(
-    image_path: Path,
-    depth_map_path: Path,
-    output_path: Path,
-    duration: float,
-    fps: int = FPS,
-    fade_out_dur: float = 0.0,
-    zoom_dir: str = "in",
-    pan_dir: str = "right",
-    depth_strength: float = 1.0,
-    zoom_amount: float | None = None,
-    pan_multiplier: float = 1.0,
-    motion_profile: str = "push_in",
-    turn_strength: float = 0.45,
-    turn_direction: float = 1.0,
+        image_path: Path,
+        depth_map_path: Path,
+        output_path: Path,
+        duration: float,
+        fps: int = FPS,
+        fade_out_dur: float = 0.0,
+        zoom_dir: str = "in",
+        pan_dir: str = "right",
+        depth_strength: float = 1.0,
+        zoom_amount: float | None = None,
+        pan_multiplier: float = 1.0,
+        motion_profile: str = "push_in",
+        turn_strength: float = 0.45,
+        turn_direction: float = 1.0,
 ) -> bool:
     """Render a still with a centered one-way zoom and the existing MiDaS 2.5D depth effect.
 
@@ -12394,7 +12653,8 @@ def render_parallax_slide(
             # in the same direction for the entire clip; there is no arc that
             # reverses around mid-shot. More conservative offsets limit rubbery
             # distortion at object boundaries.
-            scene_zoom_amount = PARALLAX_ZOOM_AMOUNT if zoom_amount is None else max(0.06, min(0.26, float(zoom_amount)))
+            scene_zoom_amount = PARALLAX_ZOOM_AMOUNT if zoom_amount is None else max(0.06,
+                                                                                     min(0.26, float(zoom_amount)))
             if zoom_dir == "out":
                 scale = 1.0 + scene_zoom_amount * (1.0 - eased)
             else:
@@ -12466,7 +12726,8 @@ def render_parallax_slide(
             "-s", f"{output_w}x{output_h}", "-r", str(fps), "-i", "pipe:0",
             "-vf", video_filter,
             "-c:v", encoder, *encoder_args,
-            "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-an", "-t", f"{duration:.3f}",
+            "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-an", "-t",
+            f"{duration:.3f}",
             *FFMPEG_CLEAN_META_VIDEO, str(temp_path),
         ]
         proc = None
@@ -12516,7 +12777,8 @@ def audit_mp4_container(path: Path) -> list[str]:
     if not path.is_file():
         return ["file_missing"]
     size = path.stat().st_size
-    markers = (b"lavf", b"lavc", b"google", b"encoder", b"writing application", b"creation_time", b"com.apple.quicktime", b"handler_name")
+    markers = (b"lavf", b"lavc", b"google", b"encoder", b"writing application", b"creation_time",
+               b"com.apple.quicktime", b"handler_name")
     try:
         with path.open("rb") as media:
             while media.tell() + 8 <= size:
@@ -12691,7 +12953,8 @@ def _is_native_fhd_h264(path: Path, target_duration: float | None = None) -> boo
         result = subprocess.run(
             [
                 "ffprobe", "-v", "error", "-select_streams", "v:0",
-                "-show_entries", "stream=codec_name,profile,width,height,pix_fmt,avg_frame_rate,sample_aspect_ratio,time_base",
+                "-show_entries",
+                "stream=codec_name,profile,width,height,pix_fmt,avg_frame_rate,sample_aspect_ratio,time_base",
                 "-of", "json", str(path),
             ],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -12708,14 +12971,14 @@ def _is_native_fhd_h264(path: Path, target_duration: float | None = None) -> boo
         except Exception:
             return False
         if not (
-            stream.get("codec_name") == "h264"
-            and int(stream.get("width", 0)) == 1920
-            and int(stream.get("height", 0)) == 1080
-            and stream.get("pix_fmt") == "yuv420p"
-            and stream.get("profile") in {"High", "Main"}
-            and stream.get("sample_aspect_ratio") == "1:1"
-            and stream.get("time_base") == "1/15360"
-            and abs(fps_value - FPS) < 0.02
+                stream.get("codec_name") == "h264"
+                and int(stream.get("width", 0)) == 1920
+                and int(stream.get("height", 0)) == 1080
+                and stream.get("pix_fmt") == "yuv420p"
+                and stream.get("profile") in {"High", "Main"}
+                and stream.get("sample_aspect_ratio") == "1:1"
+                and stream.get("time_base") == "1/15360"
+                and abs(fps_value - FPS) < 0.02
         ):
             return False
         if target_duration is not None:
@@ -12728,10 +12991,10 @@ def _is_native_fhd_h264(path: Path, target_duration: float | None = None) -> boo
 
 
 def normalize_clip(
-    input_path: Path,
-    output_path: Path,
-    target_duration: float | None = None,
-    preserve_audio: bool = False,
+        input_path: Path,
+        output_path: Path,
+        target_duration: float | None = None,
+        preserve_audio: bool = False,
 ) -> None:
     """Re-encode every montage input to a shared CFR/H.264 stream and zero-based PTS.
 
@@ -12849,10 +13112,10 @@ def normalize_clip(
 
 
 def normalize_clip_for_concat(
-    input_path: Path,
-    output_path: Path,
-    target_duration: float | None = None,
-    preserve_audio: bool = False,
+        input_path: Path,
+        output_path: Path,
+        target_duration: float | None = None,
+        preserve_audio: bool = False,
 ) -> None:
     normalize_clip(
         input_path,
@@ -12860,6 +13123,7 @@ def normalize_clip_for_concat(
         target_duration=target_duration,
         preserve_audio=preserve_audio,
     )
+
 
 def trim_video(input_path: Path, output_path: Path, duration: float) -> None:
     """Trim a media file to an explicitly requested duration."""
@@ -12922,8 +13186,8 @@ def _parse_ffconcat_input_paths(listing: Path) -> list[Path]:
 
 
 def _sum_ffconcat_input_durations(
-    listing: Path,
-    input_paths: list[Path] | None = None,
+        listing: Path,
+        input_paths: list[Path] | None = None,
 ) -> float | None:
     """Sum actual media-file durations; concat-list format.duration is often N/A."""
     paths = list(input_paths) if input_paths is not None else _parse_ffconcat_input_paths(listing)
@@ -12947,7 +13211,8 @@ def _video_stream_signature(path: Path) -> tuple[Any, ...] | None:
     try:
         result = subprocess.run(
             [FFPROBE_BIN, "-v", "error", "-select_streams", "v:0",
-             "-show_entries", "stream=codec_name,profile,pix_fmt,r_frame_rate,time_base,width,height,sample_aspect_ratio",
+             "-show_entries",
+             "stream=codec_name,profile,pix_fmt,r_frame_rate,time_base,width,height,sample_aspect_ratio",
              "-of", "json", str(path)],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             encoding="utf-8", errors="replace", timeout=30, check=True,
@@ -12965,14 +13230,14 @@ def _video_stream_signature(path: Path) -> tuple[Any, ...] | None:
 
 
 def _run_concat_demuxer_with_fallback(
-    listing: Path,
-    temp_output: Path,
-    output_path: Path,
-    *,
-    preserve_audio: bool,
-    context: str,
-    duration_hint: float | None = None,
-    allow_stream_copy: bool = True,
+        listing: Path,
+        temp_output: Path,
+        output_path: Path,
+        *,
+        preserve_audio: bool,
+        context: str,
+        duration_hint: float | None = None,
+        allow_stream_copy: bool = True,
 ) -> bool:
     """Try packet-copy only when the caller has verified compatible stream signatures."""
     timeout = max(300, int(duration_hint * 10)) if duration_hint else 900
@@ -12982,7 +13247,8 @@ def _run_concat_demuxer_with_fallback(
     ]
     strategies: list[tuple[str, list[str]]] = []
     if allow_stream_copy:
-        strategies.append(("stream-copy", ["-c", "copy", *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO)]))
+        strategies.append(
+            ("stream-copy", ["-c", "copy", *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO)]))
     audio_args = (
         ["-map", "0:a:0?", "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2"]
         if preserve_audio
@@ -13043,22 +13309,22 @@ def _concat_normalized_parts(parts: list[Path], output_path: Path, temp_dir: Pat
     _write_ffconcat_listing(parts, listing)
     total_duration = _sum_ffconcat_input_durations(listing, parts)
     if total_duration is None:
-        raise RuntimeError(f"[A/V Timing] Cannot determine input duration; refusing duration padding: {output_path.name}")
+        raise RuntimeError(
+            f"[A/V Timing] Cannot determine input duration; refusing duration padding: {output_path.name}")
     return _reencode_ffconcat_to_duration(
         listing, output_path, total_duration, preserve_audio=preserve_audio,
         context=f"{output_path.name} normalized cut-run", input_paths=parts,
     )
 
 
-
 def _reencode_ffconcat_to_duration(
-    listing: Path,
-    output_path: Path,
-    expected_duration: float,
-    *,
-    preserve_audio: bool = False,
-    context: str = "concat",
-    input_paths: list[Path] | None = None,
+        listing: Path,
+        output_path: Path,
+        expected_duration: float,
+        *,
+        preserve_audio: bool = False,
+        context: str = "concat",
+        input_paths: list[Path] | None = None,
 ) -> bool:
     """Re-encode to a deterministic CFR clock without hiding missing content in a long freeze."""
     target = max(0.1, float(expected_duration))
@@ -13115,7 +13381,9 @@ def _reencode_ffconcat_to_duration(
                         context, source_duration, target, actual, delta, pad_duration, encoder,
                     )
                     return True
-                stderr_text = completed.stderr.decode("utf-8", errors="replace") if isinstance(completed.stderr, bytes) else str(completed.stderr or "")
+                stderr_text = completed.stderr.decode("utf-8", errors="replace") if isinstance(completed.stderr,
+                                                                                               bytes) else str(
+                    completed.stderr or "")
                 failures.append(f"{encoder}: invalid output or duration delta={delta:.3f}s {stderr_text[-700:]}")
             except Exception as exc:
                 detail = getattr(exc, "stderr", b"")
@@ -13135,17 +13403,18 @@ def _reencode_ffconcat_to_duration(
 
 
 def _render_crossfade_group(
-    input_paths: list[Path],
-    durations: list[float],
-    output_path: Path,
-    temp_dir: Path,
-    preserve_audio: bool,
-    transitions: list[dict[str, Any]] | None = None,
+        input_paths: list[Path],
+        durations: list[float],
+        output_path: Path,
+        temp_dir: Path,
+        preserve_audio: bool,
+        transitions: list[dict[str, Any]] | None = None,
 ) -> bool:
     """Render only requested dissolves/fade-to-black seams; hard-cut runs are pre-concatenated."""
     if len(input_paths) < 2 or len(input_paths) != len(durations):
         return False
-    transitions = transitions or [{"type": "dissolve", "duration": SLIDE_CROSSFADE_SECONDS} for _ in range(len(input_paths) - 1)]
+    transitions = transitions or [{"type": "dissolve", "duration": SLIDE_CROSSFADE_SECONDS} for _ in
+                                  range(len(input_paths) - 1)]
     if len(transitions) != len(input_paths) - 1:
         return False
     total_duration = sum(max(0.1, float(d)) for d in durations)
@@ -13159,11 +13428,13 @@ def _render_crossfade_group(
             return False
         # Freeze the incoming first frame for T seconds. The scene's actual motion
         # therefore starts on its exact scheduled boundary after the overlap.
-        filters.append(f"[{i}:v]tpad=start_mode=clone:start_duration={transition:.3f},fps={FPS},settb=AVTB,format=yuv420p[p{i}]")
+        filters.append(
+            f"[{i}:v]tpad=start_mode=clone:start_duration={transition:.3f},fps={FPS},settb=AVTB,format=yuv420p[p{i}]")
         next_label = f"xf{i}"
         kind = "fadeblack" if str(spec.get("type", "dissolve")) == "fadeblack" else "fade"
         offset = max(0.0, accumulated_duration - transition)
-        filters.append(f"[{current_label}][p{i}]xfade=transition={kind}:duration={transition:.3f}:offset={offset:.3f}[{next_label}]")
+        filters.append(
+            f"[{current_label}][p{i}]xfade=transition={kind}:duration={transition:.3f}:offset={offset:.3f}[{next_label}]")
         current_label = next_label
         accumulated_duration += float(durations[i])
     temp_output = output_path.with_suffix(".xfade-temp.mp4")
@@ -13172,7 +13443,8 @@ def _render_crossfade_group(
     for path in input_paths:
         base_cmd.extend(["-i", str(path)])
     if preserve_audio:
-        base_cmd.extend(["-f", "lavfi", "-t", f"{total_duration:.3f}", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"])
+        base_cmd.extend(
+            ["-f", "lavfi", "-t", f"{total_duration:.3f}", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"])
     filters.append(f"[{current_label}]setsar=1[vout]")
     base_cmd.extend(["-filter_complex", ";".join(filters), "-map", "[vout]"])
     if preserve_audio:
@@ -13183,14 +13455,18 @@ def _render_crossfade_group(
                 ("libx264", ["-preset", "fast", "-crf", "20"])]
     for encoder, encoder_args in encoders:
         temp_output.unlink(missing_ok=True)
-        cmd = base_cmd + ["-c:v", encoder, *encoder_args, "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-r", str(FPS),
-                          "-t", f"{total_duration:.3f}", *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO), str(temp_output)]
+        cmd = base_cmd + ["-c:v", encoder, *encoder_args, "-pix_fmt", "yuv420p", "-profile:v", "high",
+                          "-video_track_timescale", "15360", "-r", str(FPS),
+                          "-t", f"{total_duration:.3f}",
+                          *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO), str(temp_output)]
         try:
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=max(900, int(total_duration * 5)))
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                           timeout=max(900, int(total_duration * 5)))
             actual = get_duration(temp_output)
             if is_valid_video(temp_output) and actual is not None and abs(actual - total_duration) < 0.25:
                 temp_output.replace(output_path)
-                log.info("[Transitions] %s segments; duration %.3fs; transition specs=%s", len(input_paths), actual, transitions)
+                log.info("[Transitions] %s segments; duration %.3fs; transition specs=%s", len(input_paths), actual,
+                         transitions)
                 return True
         except Exception as exc:
             stderr_tail = getattr(exc, "stderr", b"")
@@ -13207,18 +13483,15 @@ def _render_crossfade_group(
     return False
 
 
-
-
-
 def concatenate_videos(
-    video_parts: list[tuple[Path, float | None]],
-    output_path: Path,
-    temp_dir: Path,
-    preserve_audio: bool = False,
-    crossfade_duration: float = 0.0,
-    transition_start_index: int = 0,
-    transitions: list[dict[str, Any]] | None = None,
-    expected_total: float | None = None,
+        video_parts: list[tuple[Path, float | None]],
+        output_path: Path,
+        temp_dir: Path,
+        preserve_audio: bool = False,
+        crossfade_duration: float = 0.0,
+        transition_start_index: int = 0,
+        transitions: list[dict[str, Any]] | None = None,
+        expected_total: float | None = None,
 ) -> bool:
     """Normalize once, xfade requested boundaries, and enforce the requested final clock."""
     indexed = [(idx, p, d) for idx, (p, d) in enumerate(video_parts) if p.exists() and is_valid_video(p)]
@@ -13241,7 +13514,8 @@ def concatenate_videos(
         def spec_after(source_index: int) -> dict[str, Any]:
             if transitions and source_index < len(transitions):
                 item = transitions[source_index] or {}
-                return {"type": str(item.get("type", "cut")), "duration": max(0.0, float(item.get("duration", 0.0) or 0.0))}
+                return {"type": str(item.get("type", "cut")),
+                        "duration": max(0.0, float(item.get("duration", 0.0) or 0.0))}
             if crossfade_duration > 0 and source_index >= transition_start_index:
                 return {"type": "dissolve", "duration": float(crossfade_duration)}
             return {"type": "cut", "duration": 0.0}
@@ -13257,18 +13531,22 @@ def concatenate_videos(
             current.append(item)
             boundary = spec_after(item[0]) if item[0] < last_source_index else {"type": "cut", "duration": 0.0}
             if boundary["type"] in {"dissolve", "fadeblack"} and boundary["duration"] > 0:
-                run_path = current[0][1] if len(current) == 1 else temp_dir / f"{output_path.stem}_cutrun_{len(runs):04d}.mp4"
+                run_path = current[0][1] if len(
+                    current) == 1 else temp_dir / f"{output_path.stem}_cutrun_{len(runs):04d}.mp4"
                 if len(current) > 1:
-                    if not _concat_normalized_parts([x[1] for x in current], run_path, temp_dir, preserve_audio=preserve_audio):
+                    if not _concat_normalized_parts([x[1] for x in current], run_path, temp_dir,
+                                                    preserve_audio=preserve_audio):
                         raise RuntimeError("CFR re-encode concat of cut run failed")
                     created.append(run_path)
                 runs.append((run_path, sum(x[2] for x in current)))
                 run_transitions.append({"type": boundary["type"], "duration": boundary["duration"]})
                 current = []
         if current:
-            run_path = current[0][1] if len(current) == 1 else temp_dir / f"{output_path.stem}_cutrun_{len(runs):04d}.mp4"
+            run_path = current[0][1] if len(
+                current) == 1 else temp_dir / f"{output_path.stem}_cutrun_{len(runs):04d}.mp4"
             if len(current) > 1:
-                if not _concat_normalized_parts([x[1] for x in current], run_path, temp_dir, preserve_audio=preserve_audio):
+                if not _concat_normalized_parts([x[1] for x in current], run_path, temp_dir,
+                                                preserve_audio=preserve_audio):
                     raise RuntimeError("CFR re-encode concat of final cut run failed")
                 created.append(run_path)
             runs.append((run_path, sum(x[2] for x in current)))
@@ -13283,16 +13561,17 @@ def concatenate_videos(
                 # Do not packet-copy the mixed-transition fallback: packet boundaries can
                 # drop a terminal frame or shorten a cut-run. Re-encode to the scheduled clock.
                 slide_expected = sum(float(x[2]) for x in slides)
-                log.warning("[Transitions] Mixed xfade fallback: deterministic hard-cut re-encode | scenes=%s target=%.3fs",
-                            len(slides), slide_expected)
+                log.warning(
+                    "[Transitions] Mixed xfade fallback: deterministic hard-cut re-encode | scenes=%s target=%.3fs",
+                    len(slides), slide_expected)
                 # Rebuild from every normalized source scene, not the intermediate
                 # stream-copied cut-runs that were prepared only as xfade inputs.
                 fallback_listing = temp_dir / f"{output_path.stem}_mixed_fallback_inputs.txt"
                 _write_ffconcat_listing([x[1] for x in slides], fallback_listing)
                 if not _reencode_ffconcat_to_duration(
-                    fallback_listing, slide_output, slide_expected,
-                    preserve_audio=preserve_audio, context=f"{output_path.name} mixed-xfade fallback",
-                    input_paths=[x[1] for x in slides],
+                        fallback_listing, slide_output, slide_expected,
+                        preserve_audio=preserve_audio, context=f"{output_path.name} mixed-xfade fallback",
+                        input_paths=[x[1] for x in slides],
                 ):
                     raise RuntimeError("fallback re-encode concat failed")
             created.append(slide_output)
@@ -13316,12 +13595,12 @@ def concatenate_videos(
                 [part.name for part in final_parts],
             )
         if not _run_concat_demuxer_with_fallback(
-            listing, temp, output_path, preserve_audio=preserve_audio,
-            context=output_path.name, duration_hint=target_duration or packet_duration or None,
-            # With more than one file (notably intro + main montage), prefer a
-            # fresh CFR encode even if ffprobe fields happen to match: this resets PTS
-            # at the seam and avoids packet-timestamp discontinuities.
-            allow_stream_copy=signatures_match and len(final_parts) == 1,
+                listing, temp, output_path, preserve_audio=preserve_audio,
+                context=output_path.name, duration_hint=target_duration or packet_duration or None,
+                # With more than one file (notably intro + main montage), prefer a
+                # fresh CFR encode even if ffprobe fields happen to match: this resets PTS
+                # at the seam and avoids packet-timestamp discontinuities.
+                allow_stream_copy=signatures_match and len(final_parts) == 1,
         ):
             raise RuntimeError(f"Не удалось собрать {output_path.name}")
         actual_total = get_duration(output_path)
@@ -13329,21 +13608,24 @@ def concatenate_videos(
             raise RuntimeError(f"Не удалось определить длительность {output_path.name}")
         frame_tolerance = max(0.01, 1.0 / max(1, int(FPS)))
         if abs(actual_total - target_duration) > frame_tolerance:
-            log.warning("[A/V Timing] concat clock differs from target; exact re-encode required | timeline=%.3fs target=%.3fs actual=%.3fs",
-                        timeline_duration, target_duration, actual_total)
+            log.warning(
+                "[A/V Timing] concat clock differs from target; exact re-encode required | timeline=%.3fs target=%.3fs actual=%.3fs",
+                timeline_duration, target_duration, actual_total)
             if not _reencode_ffconcat_to_duration(
-                listing, output_path, target_duration,
-                preserve_audio=preserve_audio, context=f"{output_path.name} final clock alignment",
-                input_paths=final_parts,
+                    listing, output_path, target_duration,
+                    preserve_audio=preserve_audio, context=f"{output_path.name} final clock alignment",
+                    input_paths=final_parts,
             ):
-                raise RuntimeError(f"A/V duration alignment failed: target={target_duration:.3f}s actual={actual_total:.3f}s")
+                raise RuntimeError(
+                    f"A/V duration alignment failed: target={target_duration:.3f}s actual={actual_total:.3f}s")
             actual_total = get_duration(output_path)
         final_delta = abs(float(actual_total) - target_duration) if actual_total is not None else float("inf")
         log.info("[A/V Timing] concat final | timeline=%.3fs target=%.3fs actual=%s delta=%.3fs",
                  timeline_duration, target_duration,
                  f"{actual_total:.3f}s" if actual_total is not None else "unknown", final_delta)
         if actual_total is None or final_delta >= 0.25:
-            raise RuntimeError(f"A/V duration mismatch: target={target_duration:.3f}s actual={actual_total} delta={final_delta:.3f}s")
+            raise RuntimeError(
+                f"A/V duration mismatch: target={target_duration:.3f}s actual={actual_total} delta={final_delta:.3f}s")
         log.info("✅ [Montage] %s | scenes=%s | cut-runs=%s | transition boundaries=%s",
                  output_path.name, len(normalized), len(runs), len(run_transitions))
         return is_valid_video(output_path)
@@ -13355,26 +13637,32 @@ def concatenate_videos(
                 pass
 
 
-
-
-
 def ensure_resolution(video_path: Path, output_path: Path):
     try:
-        subprocess.run(['ffmpeg','-y','-i',str(video_path),'-vf','scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1','-r',str(FPS),'-pix_fmt','yuv420p','-c:v',HW_ENCODER,'-preset',ENCODER_PRESET,'-b:v','8000k','-an',str(output_path)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        subprocess.run(['ffmpeg', '-y', '-i', str(video_path), '-vf',
+                        'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1',
+                        '-r', str(FPS), '-pix_fmt', 'yuv420p', '-c:v', HW_ENCODER, '-preset', ENCODER_PRESET, '-b:v',
+                        '8000k', '-an', str(output_path)], check=True, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL)
     except Exception:
-        subprocess.run(['ffmpeg','-y','-i',str(video_path),'-vf','scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1','-r',str(FPS),'-pix_fmt','yuv420p','-c:v','libx264','-preset','fast','-crf','18','-an',str(output_path)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        subprocess.run(['ffmpeg', '-y', '-i', str(video_path), '-vf',
+                        'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1',
+                        '-r', str(FPS), '-pix_fmt', 'yuv420p', '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
+                        '-an', str(output_path)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def concatenate_slides(slide_paths: list[Path], output_video_path: Path) -> bool:
-    existing=[p for p in slide_paths if p.exists() and is_valid_video(p)]
+    existing = [p for p in slide_paths if p.exists() and is_valid_video(p)]
     if not existing: return False
-    temp_dir=existing[0].parent
-    norm_slides=[]
-    for i,p in enumerate(existing):
-        norm=temp_dir/f'norm_{i:04d}.mp4'; ensure_resolution(p,norm); norm_slides.append(norm)
-    txt=temp_dir/'inputs.txt'
+    temp_dir = existing[0].parent
+    norm_slides = []
+    for i, p in enumerate(existing):
+        norm = temp_dir / f'norm_{i:04d}.mp4';
+        ensure_resolution(p, norm);
+        norm_slides.append(norm)
+    txt = temp_dir / 'inputs.txt'
     _write_ffconcat_listing(norm_slides, txt)
-    temp=output_video_path.with_suffix('.temp.mp4')
+    temp = output_video_path.with_suffix('.temp.mp4')
     ok = _run_concat_demuxer_with_fallback(
         txt, temp, output_video_path, preserve_audio=False,
         context=output_video_path.name,
@@ -13385,9 +13673,9 @@ def concatenate_slides(slide_paths: list[Path], output_video_path: Path) -> bool
 
 
 def prepare_background_music(
-    files: list[Path],
-    target_duration: float,
-    temp_dir: Path,
+        files: list[Path],
+        target_duration: float,
+        temp_dir: Path,
 ) -> Path | None:
     valid = [f for f in files if is_valid_audio(f)]
     if not valid:
@@ -13432,20 +13720,26 @@ def prepare_background_music(
     return output
 
 
-
-
 def _chapter_title_for_language(index: int, language: str) -> str:
     """Return a short, neutral, non-spoiler documentary intertitle in narration language."""
     lang = str(language or "en").strip().lower().split("-")[0]
     titles = {
-        "ru": ["Начало истории", "Новый этап", "Смена обстоятельств", "Дальнейший путь", "Важные события", "Следующий поворот"],
-        "en": ["The Beginning", "A New Chapter", "Changing Circumstances", "The Road Ahead", "Key Developments", "Another Turning Point"],
-        "es": ["El comienzo", "Una nueva etapa", "Nuevas circunstancias", "El camino sigue", "Hechos importantes", "Otro giro"],
-        "pl": ["Początek historii", "Nowy etap", "Zmiana okoliczności", "Dalsza droga", "Ważne wydarzenia", "Kolejny zwrot"],
-        "de": ["Der Anfang", "Ein neuer Abschnitt", "Neue Umstände", "Der weitere Weg", "Wichtige Ereignisse", "Eine neue Wendung"],
-        "fr": ["Le début", "Une nouvelle étape", "Nouveaux éléments", "La suite du parcours", "Les faits marquants", "Un autre tournant"],
-        "it": ["L’inizio", "Una nuova fase", "Nuove circostanze", "Il percorso continua", "Fatti importanti", "Un’altra svolta"],
-        "pt": ["O começo", "Uma nova etapa", "Novas circunstâncias", "O caminho adiante", "Fatos importantes", "Outra virada"],
+        "ru": ["Начало истории", "Новый этап", "Смена обстоятельств", "Дальнейший путь", "Важные события",
+               "Следующий поворот"],
+        "en": ["The Beginning", "A New Chapter", "Changing Circumstances", "The Road Ahead", "Key Developments",
+               "Another Turning Point"],
+        "es": ["El comienzo", "Una nueva etapa", "Nuevas circunstancias", "El camino sigue", "Hechos importantes",
+               "Otro giro"],
+        "pl": ["Początek historii", "Nowy etap", "Zmiana okoliczności", "Dalsza droga", "Ważne wydarzenia",
+               "Kolejny zwrot"],
+        "de": ["Der Anfang", "Ein neuer Abschnitt", "Neue Umstände", "Der weitere Weg", "Wichtige Ereignisse",
+               "Eine neue Wendung"],
+        "fr": ["Le début", "Une nouvelle étape", "Nouveaux éléments", "La suite du parcours", "Les faits marquants",
+               "Un autre tournant"],
+        "it": ["L’inizio", "Una nuova fase", "Nuove circostanze", "Il percorso continua", "Fatti importanti",
+               "Un’altra svolta"],
+        "pt": ["O começo", "Uma nova etapa", "Novas circunstâncias", "O caminho adiante", "Fatos importantes",
+               "Outra virada"],
     }
     options = titles.get(lang, titles["en"])
     return options[min(max(0, int(index)), len(options) - 1)]
@@ -13474,9 +13768,9 @@ def _contextual_chapter_title(scene: dict[str, Any], index: int, language: str,
 
 
 def build_chapter_plan(
-    main_clips: list[dict[str, Any]],
-    audio_duration: float,
-    narration_language: str,
+        main_clips: list[dict[str, Any]],
+        audio_duration: float,
+        narration_language: str,
 ) -> list[dict[str, Any]]:
     """Build deterministic, sparse chapter cards from scene breaks and Whisper pause cues."""
     try:
@@ -13569,7 +13863,8 @@ def build_chapter_plan(
             "start": at,
             "end": round(min(duration - 1.0, at + 4.2), 3),
             "text": _contextual_chapter_title(
-                main_clips[int(item["scene_index"])] if int(item["scene_index"]) < len(main_clips) and isinstance(main_clips[int(item["scene_index"])], dict) else {},
+                main_clips[int(item["scene_index"])] if int(item["scene_index"]) < len(main_clips) and isinstance(
+                    main_clips[int(item["scene_index"])], dict) else {},
                 index, narration_language, at, duration,
             ),
             "scene_index": int(item["scene_index"]),
@@ -13648,10 +13943,10 @@ def _write_chapter_ass_file(path: Path, chapters: list[dict[str, Any]], visual_s
 
 
 def apply_micro_sfx_to_video(
-    input_path: Path,
-    output_path: Path,
-    event_times: list[float],
-    expected_duration: float,
+        input_path: Path,
+        output_path: Path,
+        event_times: list[float],
+        expected_duration: float,
 ) -> bool:
     """Mix a very quiet low-frequency pulse into an already narrated video, without changing its clock."""
     if not ENABLE_MICRO_SFX or not event_times or not is_valid_video(input_path):
@@ -13729,11 +14024,11 @@ def apply_micro_sfx_to_video(
 
 
 def add_audio_to_video(
-    video_path: Path,
-    voice_path: Path,
-    music_path: Path | None,
-    output_path: Path,
-    micro_sfx_times: list[float] | None = None,
+        video_path: Path,
+        voice_path: Path,
+        music_path: Path | None,
+        output_path: Path,
+        micro_sfx_times: list[float] | None = None,
 ) -> bool:
     """Mix narration with optional intro ambience/music, using finite audio streams.
 
@@ -13901,7 +14196,8 @@ def ensure_final_full_hd(video_path: Path) -> bool:
     attempts = [
         ["ffmpeg", "-y", "-i", str(video_path), "-map", "0:v:0", "-map", "0:a?", "-vf", vf,
          "-c:v", "h264_nvenc", "-preset", ENCODER_PRESET, "-rc", "vbr", "-cq", "18", "-b:v", "10M",
-         "-maxrate", "14M", "-bufsize", "20M", "-c:a", "copy", "-movflags", "+faststart", *FFMPEG_CLEAN_META_AV, str(temp_path)],
+         "-maxrate", "14M", "-bufsize", "20M", "-c:a", "copy", "-movflags", "+faststart", *FFMPEG_CLEAN_META_AV,
+         str(temp_path)],
         ["ffmpeg", "-y", "-i", str(video_path), "-map", "0:v:0", "-map", "0:a?", "-vf", vf,
          "-c:v", "libx264", "-preset", "slow", "-crf", "17", "-pix_fmt", "yuv420p",
          "-c:a", "copy", "-movflags", "+faststart", *FFMPEG_CLEAN_META_AV, str(temp_path)],
@@ -13915,9 +14211,11 @@ def ensure_final_full_hd(video_path: Path) -> bool:
                 log.warning("[Final QA] Было %sx%s; итоговое видео приведено к 1920x1080 Full HD.", width, height)
                 return True
         except Exception as exc:
-            log.warning("[Final QA] Full HD re-encode attempt failed (%s); trying fallback if available.", type(exc).__name__)
+            log.warning("[Final QA] Full HD re-encode attempt failed (%s); trying fallback if available.",
+                        type(exc).__name__)
         temp_path.unlink(missing_ok=True)
-    log.error("[Final QA] Не удалось подтвердить/получить 1920x1080; исходное видео сохранено без изменений (%sx%s).", width, height)
+    log.error("[Final QA] Не удалось подтвердить/получить 1920x1080; исходное видео сохранено без изменений (%sx%s).",
+              width, height)
     return False
 
 
@@ -13958,12 +14256,12 @@ def _stage_subtitle_file_for_ffmpeg(subtitle_file: Path) -> Path:
 
 
 def add_subtitles_to_video(
-    video_path: Path,
-    subtitle_file: Path,
-    output_dir: Path,
-    video_name: str,
-    chapter_cards: list[dict[str, Any]] | None = None,
-    visual_style_id: str = "realistic",
+        video_path: Path,
+        subtitle_file: Path,
+        output_dir: Path,
+        video_name: str,
+        chapter_cards: list[dict[str, Any]] | None = None,
+        visual_style_id: str = "realistic",
 ) -> Path | None:
     """Burn captions into the video. A silent copy is never treated as a subtitle success."""
     ensure_directory(output_dir)
@@ -14088,6 +14386,7 @@ def add_subtitles_to_video(
     log.error("❌ [Subtitles] Не удалось встроить субтитры; финал НЕ будет отмечен готовым. Подробности: %s", ffmpeg_log)
     return None
 
+
 def check_disk_space(disk_path: Path, required_space_mb: int = 2048) -> bool:
     try:
         return psutil.disk_usage(str(disk_path)).free >= required_space_mb * 1024 * 1024
@@ -14096,16 +14395,17 @@ def check_disk_space(disk_path: Path, required_space_mb: int = 2048) -> bool:
 
 
 def get_unique_temp_dir() -> Path:
-    base=Path(tempfile.gettempdir()) / "flow_pipeline"
-    base.mkdir(parents=True,exist_ok=True)
-    path=base/f"run_{int(time.time())}_{random.randint(1000,9999)}"
-    path.mkdir(parents=True,exist_ok=False)
+    base = Path(tempfile.gettempdir()) / "flow_pipeline"
+    base.mkdir(parents=True, exist_ok=True)
+    path = base / f"run_{int(time.time())}_{random.randint(1000, 9999)}"
+    path.mkdir(parents=True, exist_ok=False)
     return path
 
 
 def clear_temp(temp_to_clear: Path | None) -> None:
     if temp_to_clear and temp_to_clear.exists():
-        shutil.rmtree(temp_to_clear,ignore_errors=True)
+        shutil.rmtree(temp_to_clear, ignore_errors=True)
+
 
 # ============================================================================
 # TITLES / PREVIEWS
@@ -14170,10 +14470,10 @@ def extract_script_body(text: str) -> str:
 
 
 def append_title_variants_to_source_file(
-    script_path: Path,
-    variants_path: Path,
-    fallback_title: str = "",
-    target_lang: str = "ru",
+        script_path: Path,
+        variants_path: Path,
+        fallback_title: str = "",
+        target_lang: str = "ru",
 ) -> list[str]:
     """Append/replace title options in the source .txt without duplicating them on reruns."""
     raw_variants: list[str] = []
@@ -14223,7 +14523,6 @@ def append_title_variants_to_source_file(
     script_path.write_text(body + "\n\n" + "\n".join(appendix) + "\n", encoding="utf-8")
     log.info("[Titles] В исходный текст добавлено вариантов названия: %s", len(raw_variants))
     return raw_variants
-
 
 
 def generate_story_title_seed(story_text: str, target_lang: str = "ru", fallback_name: str = "Documentary") -> str:
@@ -14340,9 +14639,9 @@ def title_variants_need_russian_translation(path: Path, target_lang: str) -> boo
 
 
 def translate_and_paraphrase_title(
-    title: str,
-    output_dir: Path,
-    target_lang: str = "ru",
+        title: str,
+        output_dir: Path,
+        target_lang: str = "ru",
 ) -> str:
     if target_lang == "es":
         prompt = f"""
@@ -14436,11 +14735,13 @@ Original: {title}
     # If the model returned fewer than five distinct options, use a few neutral
     # editorial framings rather than repeating identical titles. They add no new factual claims.
     if target_lang == "es":
-        safe_suffixes = (" — Historia Y Contexto", " — Relato Documental", " — Datos Y Antecedentes", " — Análisis De Los Hechos")
+        safe_suffixes = (" — Historia Y Contexto", " — Relato Documental", " — Datos Y Antecedentes",
+                         " — Análisis De Los Hechos")
     elif target_lang == "pl":
         safe_suffixes = (" — Historia I Kontekst", " — Opowieść Dokumentalna", " — Fakty I Tło", " — Przegląd Wydarzeń")
     else:
-        safe_suffixes = (" — История И Контекст", " — Документальный Рассказ", " — Факты И Предыстория", " — Обзор Событий")
+        safe_suffixes = (" — История И Контекст", " — Документальный Рассказ", " — Факты И Предыстория",
+                         " — Обзор Событий")
     base = candidates[0] if candidates else fallback
     for suffix in safe_suffixes:
         if len(candidates) >= 5 or not base:
@@ -14475,9 +14776,9 @@ Original: {title}
 
 
 def make_clip_intervals(
-    start_time: float,
-    end_time: float,
-    chunk: float = FLOW_CLIP_SECONDS,
+        start_time: float,
+        end_time: float,
+        chunk: float = FLOW_CLIP_SECONDS,
 ) -> list[tuple[float, float]]:
     result = []
     current = start_time
@@ -14493,12 +14794,11 @@ def make_clip_intervals(
 # ============================================================================
 
 
-
 def create_silent_intro_fallback(
-    state: ProjectState,
-    shot_index: int,
-    output_path: Path,
-    matching_image: Path | None = None,
+        state: ProjectState,
+        shot_index: int,
+        output_path: Path,
+        matching_image: Path | None = None,
 ) -> bool:
     """Create a silent 8-second clip only from an image generated for this exact shot.
 
@@ -14567,13 +14867,19 @@ def normalize_intro_clip_duration(path: Path, target_duration: float = FLOW_CLIP
         return False
     angle = math.radians(random.choice((-1, 1)) * random.uniform(0.30, 0.45))
     crop = random.uniform(0.950, 0.962)
-    contrast, brightness, saturation = random.uniform(*COLOR_CONTRAST_JITTER), random.uniform(*COLOR_BRIGHTNESS_JITTER), random.uniform(*COLOR_SATURATION_JITTER)
+    contrast, brightness, saturation = random.uniform(*COLOR_CONTRAST_JITTER), random.uniform(
+        *COLOR_BRIGHTNESS_JITTER), random.uniform(*COLOR_SATURATION_JITTER)
     grain = 1 if ACTIVE_VISUAL_STYLE_ID in {"comic_explainer", "cartoon_2d"} else random.randint(2, 3)
     vf = f"setpts=PTS-STARTPTS,setpts=PTS/{speed_pts:.6f},rotate={angle:.9f}:ow=iw:oh=ih:bilinear=1,crop=iw*{crop:.6f}:ih*{crop:.6f},scale=1920:1080:flags=lanczos,eq=contrast={contrast:.4f}:brightness={brightness:.4f}:saturation={saturation:.4f},noise=alls={grain}:allf=t+u,fps={FPS},tpad=stop_mode=clone:stop_duration={pad_seconds:.3f},setsar=1"
     bitrate = f"{random.randint(*VIDEO_BITRATE_RANGE)}k"
     attempts = [
-        [FFMPEG_BIN, "-y", "-i", str(path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target_duration:.3f}", "-r", str(FPS), "-c:v", HW_ENCODER, "-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", bitrate, "-maxrate", "12000k", "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
-        [FFMPEG_BIN, "-y", "-i", str(path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target_duration:.3f}", "-r", str(FPS), "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
+        [FFMPEG_BIN, "-y", "-i", str(path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target_duration:.3f}", "-r",
+         str(FPS), "-c:v", HW_ENCODER, "-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", bitrate, "-maxrate", "12000k",
+         "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-movflags", "+faststart",
+         *FFMPEG_CLEAN_META_VIDEO, str(temp)],
+        [FFMPEG_BIN, "-y", "-i", str(path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target_duration:.3f}", "-r",
+         str(FPS), "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", "-profile:v", "high",
+         "-video_track_timescale", "15360", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
     ]
     try:
         last_error = None
@@ -14582,7 +14888,8 @@ def normalize_intro_clip_duration(path: Path, target_duration: float = FLOW_CLIP
             try:
                 subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=300)
                 actual = get_duration(temp)
-                if is_valid_video(temp) and actual is not None and abs(actual - target_duration) <= 0.10 and not has_audio_stream(temp):
+                if is_valid_video(temp) and actual is not None and abs(
+                        actual - target_duration) <= 0.10 and not has_audio_stream(temp):
                     temp.replace(path)
                     log.info("[Intro Master] %s: %.3fs -> %.3fs; silent output", path.name, current, target_duration)
                     return True
@@ -14596,21 +14903,23 @@ def normalize_intro_clip_duration(path: Path, target_duration: float = FLOW_CLIP
         temp.unlink(missing_ok=True)
 
 
-
 async def build_intro(
-    state: ProjectState,
-    text_content: str,
-    manager: FlowAccountManager,
-    playwright,
-    target_lang: str = "ru",
-    narration_segments: list[dict[str, Any]] | None = None,
+        state: ProjectState,
+        text_content: str,
+        manager: FlowAccountManager,
+        playwright,
+        target_lang: str = "ru",
+        narration_segments: list[dict[str, Any]] | None = None,
 ) -> float:
     intro = state.data["intro"]
-    narration_duration = max((float(x.get("end", 0) or 0) for x in (narration_segments or []) if isinstance(x, dict)), default=0.0)
+    narration_duration = max((float(x.get("end", 0) or 0) for x in (narration_segments or []) if isinstance(x, dict)),
+                             default=0.0)
     if narration_duration <= 0.0:
         narration_duration = float(state.data.get("timing", {}).get("audio_duration", 0.0) or 0.0)
     saved_plan = intro.get("plan") if isinstance(intro.get("plan"), dict) else None
-    intro_plan = saved_plan if saved_plan and isinstance(saved_plan.get("clip_durations"), list) else plan_floating_intro(narration_segments or [], narration_duration)
+    intro_plan = saved_plan if saved_plan and isinstance(saved_plan.get("clip_durations"),
+                                                         list) else plan_floating_intro(narration_segments or [],
+                                                                                        narration_duration)
     intro["plan"] = intro_plan
     intro["clip_durations"] = list(intro_plan["clip_durations"])
     intro["intro_end_time"] = float(intro_plan["intro_end_time"])
@@ -14631,33 +14940,35 @@ async def build_intro(
 
     prompts = intro.get("prompts", [])
     storyboard_needs_refresh = (
-        not isinstance(prompts, list)
-        or len(prompts) != intro_count
-        or intro.get("storyboard_version") != INTRO_STORYBOARD_VERSION
+            not isinstance(prompts, list)
+            or len(prompts) != intro_count
+            or intro.get("storyboard_version") != INTRO_STORYBOARD_VERSION
     )
     if storyboard_needs_refresh:
         old_output = Path(str(intro.get("output", ""))) if intro.get("output") else None
         montage_state_at_refresh = state.data.get("montage", {}) if isinstance(state.data.get("montage"), dict) else {}
         final_state_at_refresh = state.data.get("final", {}) if isinstance(state.data.get("final"), dict) else {}
         had_legacy_intro = (
-            bool(prompts)
-            or bool(intro.get("done"))
-            or bool(old_output and old_output.exists())
-            or any(
-                (state.media_dir / f"{kind}_{shot_index:02d}.mp4").is_file()
-                for shot_index in range(1, intro_count + 1)
-                for kind in ("intro_raw", "intro_clip")
-            )
-            or any(
-                Path(str(montage_state_at_refresh.get(key, "") or "")).is_file()
-                for key in ("no_audio", "with_audio")
-                if str(montage_state_at_refresh.get(key, "") or "").strip()
-            )
-            or bool(str(final_state_at_refresh.get("video", "") or "").strip() and Path(str(final_state_at_refresh.get("video"))).is_file())
+                bool(prompts)
+                or bool(intro.get("done"))
+                or bool(old_output and old_output.exists())
+                or any(
+            (state.media_dir / f"{kind}_{shot_index:02d}.mp4").is_file()
+            for shot_index in range(1, intro_count + 1)
+            for kind in ("intro_raw", "intro_clip")
+        )
+                or any(
+            Path(str(montage_state_at_refresh.get(key, "") or "")).is_file()
+            for key in ("no_audio", "with_audio")
+            if str(montage_state_at_refresh.get(key, "") or "").strip()
+        )
+                or bool(str(final_state_at_refresh.get("video", "") or "").strip() and Path(
+            str(final_state_at_refresh.get("video"))).is_file())
         )
         chars = state.data.get("analysis", {}).get("characters", {})
         ctx = state.data.get("analysis", {}).get("context", {})
-        timed_windows = build_intro_narration_windows(narration_segments, shot_count=intro_count, clip_durations=intro_durations)
+        timed_windows = build_intro_narration_windows(narration_segments, shot_count=intro_count,
+                                                      clip_durations=intro_durations)
         timed_opening_text = " ".join(
             str(item.get("text", "") or "").strip() for item in timed_windows
             if str(item.get("text", "") or "").strip()
@@ -14787,16 +15098,20 @@ async def build_intro(
     clip_durations: list[float] = []
     intro_analysis = state.data.get("analysis", {}) if isinstance(state.data.get("analysis"), dict) else {}
     intro_hero_path, intro_hero_entry = get_project_hero_etalon(intro_analysis)
-    intro_character_bible = intro_analysis.get("character_bible", {}) if isinstance(intro_analysis.get("character_bible"), dict) else {}
+    intro_character_bible = intro_analysis.get("character_bible", {}) if isinstance(
+        intro_analysis.get("character_bible"), dict) else {}
     if intro_hero_path:
-        log.info("[Intro Reference] Найден эталон канала для интро: %s; он прикрепляется только к кадрам CAST=PROTAGONIST/BOTH.", intro_hero_path.name)
+        log.info(
+            "[Intro Reference] Найден эталон канала для интро: %s; он прикрепляется только к кадрам CAST=PROTAGONIST/BOTH.",
+            intro_hero_path.name)
 
     for idx, shot in enumerate(intro["prompts"], start=1):
         raw_path = state.media_dir / f"intro_raw_{idx:02d}.mp4"
         clip_path = state.media_dir / f"intro_clip_{idx:02d}.mp4"
         shot_target_duration = intro_durations[idx - 1]
         shot_start = float(shot.get("narration_start", sum(intro_durations[:idx - 1])) or 0.0)
-        shot_end = float(shot.get("narration_end", shot_start + shot_target_duration) or shot_start + shot_target_duration)
+        shot_end = float(
+            shot.get("narration_end", shot_start + shot_target_duration) or shot_start + shot_target_duration)
         shot_excerpt = re.sub(r"\s+", " ", str(shot.get("narration_excerpt", "") or "").strip())
         log.info(
             "[Intro Alignment] Shot %s/%s -> %s-%s | narration=%s",
@@ -14830,15 +15145,19 @@ async def build_intro(
                 if not any(str(path.resolve()).casefold() == hero_key for path in shot_references):
                     shot_references.insert(0, intro_hero_path)
             if intro_hero_path and cast_mode in {"PROTAGONIST", "BOTH"}:
-                log.info("[Intro Reference] Shot %s/%s CAST=%s; прикрепляю эталон главного героя %s.", idx, intro_count, cast_mode, intro_hero_path.name)
+                log.info("[Intro Reference] Shot %s/%s CAST=%s; прикрепляю эталон главного героя %s.", idx, intro_count,
+                         cast_mode, intro_hero_path.name)
             elif cast_mode == "NONE":
                 log.info("[Intro Reference] Shot %s/%s CAST=NONE; эталон героя не прикрепляется.", idx, intro_count)
             else:
-                log.info("[Intro Reference] Shot %s/%s CAST=%s; secondary references=%s; герой-эталон не прикрепляется.", idx, intro_count, cast_mode, len(shot_references))
+                log.info(
+                    "[Intro Reference] Shot %s/%s CAST=%s; secondary references=%s; герой-эталон не прикрепляется.",
+                    idx, intro_count, cast_mode, len(shot_references))
 
             generation_prompt = str(shot.get("prompt", "")).strip()
             hero_key = str(intro_hero_path.resolve()).casefold() if intro_hero_path else ""
-            hero_attached = bool(hero_key and any(str(path.resolve()).casefold() == hero_key for path in shot_references))
+            hero_attached = bool(
+                hero_key and any(str(path.resolve()).casefold() == hero_key for path in shot_references))
             if hero_attached:
                 generation_prompt += (
                     "\n\nINTRO PROTAGONIST ETALON: The attached channel image is the identity reference for the central narrator/main protagonist only. "
@@ -14886,12 +15205,12 @@ async def build_intro(
                 fallback_image_path.unlink(missing_ok=True)
                 shot_core = _flow_prompt_core(generation_prompt).strip()
                 still_prompt = (
-                    "Create ONE single full-bleed 16:9 still illustration/frame for this exact intro shot. "
-                    "Preserve the same subject, character identity, visible action, object, location, era, "
-                    "composition and selected visual style from the prompt below. This still will be shown "
-                    "during the exact narration interval assigned to this shot, so do not substitute a generic "
-                    "portrait, unrelated location, stock image, or different story event. No collage, no text, "
-                    "no captions, no logo, no watermark.\n\n" + shot_core
+                        "Create ONE single full-bleed 16:9 still illustration/frame for this exact intro shot. "
+                        "Preserve the same subject, character identity, visible action, object, location, era, "
+                        "composition and selected visual style from the prompt below. This still will be shown "
+                        "during the exact narration interval assigned to this shot, so do not substitute a generic "
+                        "portrait, unrelated location, stock image, or different story event. No collage, no text, "
+                        "no captions, no logo, no watermark.\n\n" + shot_core
                 )
                 still_prompt = apply_visible_text_language_rule(
                     apply_youtube_content_safety_rules(still_prompt, "image"), target_lang
@@ -15080,9 +15399,9 @@ def find_fallback_scene_image(state: ProjectState, current_index: int, target_pa
         try:
             if ENABLE_YOUTUBE_CONTENT_SAFETY_REVIEW:
                 verified_safe = (
-                    isinstance(review, dict)
-                    and review.get("decision") == "PASS"
-                    and review.get("sha256") == sha256_file(candidate)
+                        isinstance(review, dict)
+                        and review.get("decision") == "PASS"
+                        and review.get("sha256") == sha256_file(candidate)
                 )
             else:
                 # With remote vision review disabled, use technical QA and safe prompts.
@@ -15105,9 +15424,9 @@ def find_fallback_scene_image(state: ProjectState, current_index: int, target_pa
             review = matching.get("content_safety_review", {}) if isinstance(matching, dict) else {}
             if ENABLE_YOUTUBE_CONTENT_SAFETY_REVIEW:
                 safe_hash_matches = (
-                    isinstance(review, dict)
-                    and review.get("decision") == "PASS"
-                    and review.get("sha256") == sha256_file(candidate)
+                        isinstance(review, dict)
+                        and review.get("decision") == "PASS"
+                        and review.get("sha256") == sha256_file(candidate)
                 )
             else:
                 safe_hash_matches = True
@@ -15132,7 +15451,8 @@ def find_fallback_scene_image(state: ProjectState, current_index: int, target_pa
             if is_valid_image(extracted) and not image_quality_issues(extracted):
                 if not ENABLE_YOUTUBE_CONTENT_SAFETY_REVIEW:
                     return extracted, "intro fallback frame (technical QA passed; safe-prompt workflow)"
-                intro_review = review_images_for_youtube([extracted], context="Fallback frame from intro video", media_kind="image")
+                intro_review = review_images_for_youtube([extracted], context="Fallback frame from intro video",
+                                                         media_kind="image")
                 if intro_review.get("decision") == "PASS":
                     return extracted, "intro fallback frame (content review passed)"
         except Exception as exc:
@@ -15176,17 +15496,18 @@ def archive_and_reset_for_language_change(state: ProjectState, new_lang: str) ->
         return
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    archive_dir = ensure_directory(state.work_dir / f"language_switch_archive_{previous_lang or 'legacy'}_to_{new_lang}_{timestamp}")
+    archive_dir = ensure_directory(
+        state.work_dir / f"language_switch_archive_{previous_lang or 'legacy'}_to_{new_lang}_{timestamp}")
     targets: list[Path] = []
     for key_path in (
-        state.data.get("audio", {}).get("path"),
-        state.data.get("whisper", {}).get("subtitle_path"),
-        state.data.get("whisper", {}).get("segments_path"),
-        state.data.get("intro", {}).get("output"),
-        state.data.get("montage", {}).get("no_audio"),
-        state.data.get("montage", {}).get("with_audio"),
-        state.data.get("final", {}).get("video"),
-        state.data.get("final", {}).get("subtitles"),
+            state.data.get("audio", {}).get("path"),
+            state.data.get("whisper", {}).get("subtitle_path"),
+            state.data.get("whisper", {}).get("segments_path"),
+            state.data.get("intro", {}).get("output"),
+            state.data.get("montage", {}).get("no_audio"),
+            state.data.get("montage", {}).get("with_audio"),
+            state.data.get("final", {}).get("video"),
+            state.data.get("final", {}).get("subtitles"),
     ):
         if key_path:
             targets.append(Path(str(key_path)))
@@ -15237,7 +15558,8 @@ def archive_and_reset_for_language_change(state: ProjectState, new_lang: str) ->
     intro["output"] = str(state.media_dir / "intro_floating.mp4")
     state.data["main_clips"] = []
     state.data["scene_plan"] = []
-    state.data["timing"] = {"intro_duration": 0.0, "audio_duration": 0.0, "main_timeline_start": 0.0, "timeline_signature": ""}
+    state.data["timing"] = {"intro_duration": 0.0, "audio_duration": 0.0, "main_timeline_start": 0.0,
+                            "timeline_signature": ""}
     state.data["montage"]["done"] = False
     state.data["final"]["title"] = ""
     state.data["final"]["video"] = ""
@@ -15347,7 +15669,9 @@ def find_project_preview(folder: Path) -> Path | None:
                 continue
         if ranked:
             ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
-            log.warning("[Preview] Имя оригинального превью не распознано; выбрано самое подходящее широкоформатное изображение из корня: %s", ranked[0][2].name)
+            log.warning(
+                "[Preview] Имя оригинального превью не распознано; выбрано самое подходящее широкоформатное изображение из корня: %s",
+                ranked[0][2].name)
             return ranked[0][2]
     if generic_images:
         generic_images.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
@@ -15465,27 +15789,27 @@ def get_project_hero_etalon(analysis: dict[str, Any] | None) -> tuple[Path | Non
 
 
 def append_thumbnail_hero_identity_instruction(
-    prompt: str, hero_entry: dict[str, Any] | None, reference_layout: str
+        prompt: str, hero_entry: dict[str, Any] | None, reference_layout: str
 ) -> str:
     """Tell Flow which attached image is the protagonist identity reference for thumbnail generation."""
     if not reference_layout:
         return str(prompt or "").strip()
     instruction = (
-        "\n\nTHUMBNAIL CHARACTER ETALON INSTRUCTION: " + reference_layout + ". "
-        "The attached channel etalon is a character identity reference, not a scene/composition reference. "
-        "When showing the protagonist, keep the same recognizable face/head shape, hair, eyes, skin tone, age and body proportions from the etalon. "
-        "The selected etalon outfit is the project's default wardrobe; do not revert to a generic outfit in the script if it conflicts. "
-        "Wardrobe may change only when the story context clearly requires a different outfit. Do not add unshown accessories, logos or tools."
+            "\n\nTHUMBNAIL CHARACTER ETALON INSTRUCTION: " + reference_layout + ". "
+                                                                                "The attached channel etalon is a character identity reference, not a scene/composition reference. "
+                                                                                "When showing the protagonist, keep the same recognizable face/head shape, hair, eyes, skin tone, age and body proportions from the etalon. "
+                                                                                "The selected etalon outfit is the project's default wardrobe; do not revert to a generic outfit in the script if it conflicts. "
+                                                                                "Wardrobe may change only when the story context clearly requires a different outfit. Do not add unshown accessories, logos or tools."
     )
     result = str(prompt or "").strip() + instruction
     return append_channel_hero_skin_lock(result, hero_entry, "thumbnail")
 
 
 def prepare_thumbnail_prompt_for_submission(
-    prompt: str,
-    reference_images: list[Path],
-    analysis: dict[str, Any] | None,
-    target_lang: str,
+        prompt: str,
+        reference_images: list[Path],
+        analysis: dict[str, Any] | None,
+        target_lang: str,
 ) -> str:
     """Apply standard thumbnail rules, then put the channel hero skin lock last if its etalon is attached."""
     prepared = apply_visible_text_language_rule(
@@ -15507,7 +15831,8 @@ def prepare_thumbnail_prompt_for_submission(
 def copy_original_preview(folder: Path, output_dir: Path) -> Path | None:
     source = find_project_preview(folder)
     if source is None:
-        log.warning("[Preview] В исходной папке не найдено оригинальное превью по имени/формату; будут сохранены два новых превью.")
+        log.warning(
+            "[Preview] В исходной папке не найдено оригинальное превью по имени/формату; будут сохранены два новых превью.")
         return None
     destination = output_dir / f"Preview_Original{source.suffix.casefold()}"
     try:
@@ -15525,7 +15850,8 @@ def copy_original_preview(folder: Path, output_dir: Path) -> Path | None:
     except Exception as exc:
         log.error("[Preview] Не удалось сохранить оригинальное превью в папку результата: %s", exc)
         # Do not let cleanup delete the only copy of the source preview.
-        raise FlowTechnicalError(f"Не удалось скопировать оригинальное превью в папку финального результата: {exc}") from exc
+        raise FlowTechnicalError(
+            f"Не удалось скопировать оригинальное превью в папку финального результата: {exc}") from exc
 
 
 def final_delivery_outputs_ready(folder: Path, final_path: Path) -> bool:
@@ -15562,9 +15888,9 @@ def final_delivery_outputs_ready(folder: Path, final_path: Path) -> bool:
         for thumb in thumbs:
             p = Path(str(thumb.get("path", "")))
             if (
-                not is_valid_image(p)
-                or not preview_image_has_delivery_size(p)
-                or p.name not in expected_names
+                    not is_valid_image(p)
+                    or not preview_image_has_delivery_size(p)
+                    or p.name not in expected_names
             ):
                 return False
             delivered_names.add(p.name)
@@ -15592,7 +15918,8 @@ def final_delivery_outputs_ready(folder: Path, final_path: Path) -> bool:
             return False
         # Final video, delivered story text, and images must live outside source folder.
         folder_resolved = folder.resolve()
-        required = [final_path.resolve(), story_text_path.resolve()] + [Path(str(t.get("path", ""))).resolve() for t in thumbs]
+        required = [final_path.resolve(), story_text_path.resolve()] + [Path(str(t.get("path", ""))).resolve() for t in
+                                                                        thumbs]
         if original_copy:
             required.append(Path(original_copy).resolve())
         if any(p == folder_resolved or folder_resolved in p.parents for p in required):
@@ -15633,11 +15960,12 @@ def project_missing_required_intro_clips(folder: Path) -> bool:
         )
         intro_output = Path(str(intro.get("output", "") or ""))
         missing_intro_output = bool(intro.get("done")) and (
-            not intro_output.name or not is_valid_video(media_dir / intro_output.name)
+                not intro_output.name or not is_valid_video(media_dir / intro_output.name)
         )
         final = data.get("final", {}) if isinstance(data, dict) else {}
         final_path_value = str(final.get("video", "") or "")
-        missing_final_output = bool(final.get("done")) and bool(final_path_value) and not Path(final_path_value).is_file()
+        missing_final_output = bool(final.get("done")) and bool(final_path_value) and not Path(
+            final_path_value).is_file()
         return missing_intro_clip or missing_intro_output or missing_final_output
     except Exception:
         return False
@@ -15806,7 +16134,9 @@ def finalize_project_folder(folder: Path, final_path: Path) -> bool:
         return False
 
     if any(p == source or source in p.parents for p in protected):
-        log.error("[Project Cleanup] Защита от потери данных: один из результатов расположен внутри исходной папки. Не удаляю %s", folder)
+        log.error(
+            "[Project Cleanup] Защита от потери данных: один из результатов расположен внутри исходной папки. Не удаляю %s",
+            folder)
         return False
 
     import gc
@@ -15847,19 +16177,21 @@ def _retry_remove_readonly(func, name, exc_info) -> None:
 
 
 async def process_project(
-    folder: Path,
-    channel_name: str,
-    project_lang: str,
-    selected_intro: bool,
-    manager: FlowAccountManager,
-    playwright,
-    selected_visual_style: str = "realistic",
+        folder: Path,
+        channel_name: str,
+        project_lang: str,
+        selected_intro: bool,
+        manager: FlowAccountManager,
+        playwright,
+        selected_visual_style: str = "realistic",
 ) -> bool:
     manager.last_project_stop_reason = None
-    log.info("[TTS Voice] Project=%s | channel=%s | voice=%s", folder.name, channel_name, get_channel_tts_voice(channel_name))
+    log.info("[TTS Voice] Project=%s | channel=%s | voice=%s", folder.name, channel_name,
+             get_channel_tts_voice(channel_name))
     manual_reopen_requested = project_manual_reopen_requested(folder)
     if is_completed_project_folder(folder):
-        log.info("⏭️ [Project Done] %s уже завершён (_DONE или sidecar marker); пропускаю повторную обработку.", folder.name)
+        log.info("⏭️ [Project Done] %s уже завершён (_DONE или sidecar marker); пропускаю повторную обработку.",
+                 folder.name)
         return True
     if manual_reopen_requested:
         log.warning(
@@ -15875,7 +16207,8 @@ async def process_project(
     state.data.setdefault("source_preview_delivery", "")
     state.data.setdefault("story_text_delivery", "")
     requested_style = normalize_visual_style(selected_visual_style)
-    stored_style = normalize_visual_style(state.data.get("visual_style_id")) if state.data.get("visual_style_id") else None
+    stored_style = normalize_visual_style(state.data.get("visual_style_id")) if state.data.get(
+        "visual_style_id") else None
     has_existing_visual_work = bool(
         state.data.get("main_clips")
         or state.data.get("intro", {}).get("clips")
@@ -15918,7 +16251,8 @@ async def process_project(
         if state.data.pop(obsolete_key, None) is not None:
             removed_session_metadata = True
     if removed_session_metadata:
-        log.info("[Flow Session] Удалены старые флаги блокировки edit_square; History-сессии включены без блокировки профиля.")
+        log.info(
+            "[Flow Session] Удалены старые флаги блокировки edit_square; History-сессии включены без блокировки профиля.")
         state.save()
     # If intro clips were deliberately deleted (e.g. clips containing unwanted
     # dialogue/music), invalidate only downstream renders and rebuild the missing
@@ -15941,7 +16275,8 @@ async def process_project(
         if final_candidate.is_file() and final_delivery_outputs_ready(folder, final_candidate):
             if finalize_project_folder(folder, final_candidate):
                 return True
-            log.warning("[Project Cleanup] Готовые результаты уже есть, но исходная папка не удалена. Повторю очистку после дальнейшей проверки.")
+            log.warning(
+                "[Project Cleanup] Готовые результаты уже есть, но исходная папка не удалена. Повторю очистку после дальнейшей проверки.")
             return False
     archive_and_reset_for_language_change(state, project_lang)
     state.data["intro"]["enabled"] = bool(selected_intro)
@@ -15971,7 +16306,8 @@ async def process_project(
         try:
             raw_candidate = candidate.read_text(encoding="utf-8", errors="replace").lstrip("\ufeff")
             marker_position = raw_candidate.find(TITLE_VARIANTS_START_MARKER)
-            first_nonempty = next((line.strip() for line in raw_candidate.splitlines() if line.strip()), "<пустой файл>")
+            first_nonempty = next((line.strip() for line in raw_candidate.splitlines() if line.strip()),
+                                  "<пустой файл>")
             marker_info = (
                 f"marker_position={marker_position}; first_line={first_nonempty[:100]!r}"
                 if marker_position >= 0 else f"first_line={first_nonempty[:100]!r}"
@@ -16020,7 +16356,9 @@ async def process_project(
             }
             state.set_stage("language_mismatch", "NEEDS_LANGUAGE_SELECTION")
             state.save()
-            log.error("[Narration Language] %s Проект не запускаю, чтобы не смешивать языки озвучки и визуального текста.", mismatch_message)
+            log.error(
+                "[Narration Language] %s Проект не запускаю, чтобы не смешивать языки озвучки и визуального текста.",
+                mismatch_message)
             return False
         state.data.pop("language_mismatch", None)
     story_source_sha256 = hashlib.sha256(text_content.encode("utf-8")).hexdigest()
@@ -16030,7 +16368,8 @@ async def process_project(
             "[Project Source] Script body changed for %s. Archiving existing state/media/work and rebuilding this story to avoid mixing assets.",
             folder.name,
         )
-        archive_root = ensure_directory(folder / "_flow_archive" / f"script_revision_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        archive_root = ensure_directory(
+            folder / "_flow_archive" / f"script_revision_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
         previous_final = str(state.data.get("final", {}).get("video", "") or "")
         if previous_final:
             previous_final_path = Path(previous_final)
@@ -16038,12 +16377,15 @@ async def process_project(
                 try:
                     # Archive beside the old output on the same drive where possible, avoiding
                     # a cross-drive copy of a large MP4 into the source-folder archive.
-                    old_output_archive = ensure_directory(previous_final_path.parent / "_stale_story_archive" / f"{folder.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+                    old_output_archive = ensure_directory(
+                        previous_final_path.parent / "_stale_story_archive" / f"{folder.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
                     archived_old_output = old_output_archive / previous_final_path.name
                     shutil.move(str(previous_final_path), str(archived_old_output))
-                    log.warning("[Project Source] Перенесён устаревший MP4 от предыдущей истории: %s", archived_old_output)
+                    log.warning("[Project Source] Перенесён устаревший MP4 от предыдущей истории: %s",
+                                archived_old_output)
                 except Exception as exc:
-                    log.warning("[Project Source] Не удалось архивировать старый итоговый MP4 %s: %s", previous_final_path, exc)
+                    log.warning("[Project Source] Не удалось архивировать старый итоговый MP4 %s: %s",
+                                previous_final_path, exc)
         for source_dir, label in ((state.media_dir, "media"), (state.state_dir, "state"), (state.work_dir, "work")):
             destination_dir = ensure_directory(archive_root / label)
             for item in list(source_dir.iterdir()):
@@ -16103,8 +16445,8 @@ async def process_project(
             # which caused needless TTS regeneration even when the matching .wav existed.
             audio_candidates = []
             for candidate in sorted(
-                list(folder.glob("*.wav")) + list(folder.glob("*.mp3")),
-                key=lambda item: item.name.casefold(),
+                    list(folder.glob("*.wav")) + list(folder.glob("*.mp3")),
+                    key=lambda item: item.name.casefold(),
             ):
                 try:
                     if candidate.is_file() and is_valid_audio(candidate):
@@ -16147,7 +16489,8 @@ async def process_project(
 
             if existing_audio:
                 if not master_voice_audio(existing_audio, audio_path):
-                    raise RuntimeError(f"Не удалось выполнить мастеринг существующей озвучки до Whisper: {existing_audio}")
+                    raise RuntimeError(
+                        f"Не удалось выполнить мастеринг существующей озвучки до Whisper: {existing_audio}")
                 log.info(
                     "🎧 [Audio] Используем готовую озвучку из папки проекта: %s (lang=%s; размер=%.1f MB)",
                     existing_audio.name, project_lang, existing_audio.stat().st_size / (1024 * 1024),
@@ -16155,9 +16498,9 @@ async def process_project(
             else:
                 log.info("🎙️ [Audio] Готовый WAV/MP3 для этого проекта не найден — генерируем TTS...")
                 if not generate_audio_gemini_sync(
-                    narration_text,
-                    state.work_dir,
-                    audio_path,
+                        narration_text,
+                        state.work_dir,
+                        audio_path,
                 ):
                     raise RuntimeError("Gemini TTS failed")
 
@@ -16209,14 +16552,17 @@ async def process_project(
             analysis["context"] = analyze_context(text_content)
             state.save()
 
-        bible_entries = analysis.get("character_bible", {}).get("characters", []) if isinstance(analysis.get("character_bible"), dict) else []
+        bible_entries = analysis.get("character_bible", {}).get("characters", []) if isinstance(
+            analysis.get("character_bible"), dict) else []
         bible_is_current = (
-            isinstance(analysis.get("character_bible"), dict)
-            and int(analysis.get("character_bible", {}).get("version", 0) or 0) >= 5
-            and analysis.get("character_bible_source_sha256") == story_source_sha256
-            and isinstance(bible_entries, list)
-            and bool(bible_entries)
-            and all(isinstance(item, dict) and bool(item.get("aliases")) and bool(item.get("narrative_role")) for item in bible_entries)
+                isinstance(analysis.get("character_bible"), dict)
+                and int(analysis.get("character_bible", {}).get("version", 0) or 0) >= 5
+                and analysis.get("character_bible_source_sha256") == story_source_sha256
+                and isinstance(bible_entries, list)
+                and bool(bible_entries)
+                and all(
+            isinstance(item, dict) and bool(item.get("aliases")) and bool(item.get("narrative_role")) for item in
+            bible_entries)
         )
         if not bible_is_current:
             bible = analyze_character_bible(text_content)
@@ -16234,8 +16580,10 @@ async def process_project(
                         "age_or_stage": "follow story; keep unchanged",
                         "face_or_head": "use the same face every time", "skin_tone_or_coat": "keep one consistent tone",
                         "hair_or_mane": "keep the same colour and hairstyle", "eyes": "keep the same eye colour",
-                        "build_or_body": "keep the same body type", "wardrobe_or_equipment": "era-appropriate default outfit; adapt only when story time, weather, location, or activity warrants it",
-                        "distinctive_features": "do not invent new permanent marks", "continuity_lock": str(description)[:700],
+                        "build_or_body": "keep the same body type",
+                        "wardrobe_or_equipment": "era-appropriate default outfit; adapt only when story time, weather, location, or activity warrants it",
+                        "distinctive_features": "do not invent new permanent marks",
+                        "continuity_lock": str(description)[:700],
                     })
                 bible = {"version": 5, "characters": entries}
             analysis["character_bible"] = bible
@@ -16269,7 +16617,8 @@ async def process_project(
         state.save()
         try:
             (state.work_dir / "character_bible.json").write_text(
-                json.dumps(analysis.get("character_bible", {"version": 1, "characters": []}), ensure_ascii=False, indent=2),
+                json.dumps(analysis.get("character_bible", {"version": 1, "characters": []}), ensure_ascii=False,
+                           indent=2),
                 encoding="utf-8",
             )
         except Exception as exc:
@@ -16300,8 +16649,8 @@ async def process_project(
             intro_duration = 0.0
 
         intro_timing_changed = (
-            previous_intro_duration > 0.05
-            and abs(previous_intro_duration - intro_duration) > 0.10
+                previous_intro_duration > 0.05
+                and abs(previous_intro_duration - intro_duration) > 0.10
         )
 
         state.data.setdefault("timing", {})
@@ -16319,7 +16668,8 @@ async def process_project(
                     try:
                         stale.unlink(missing_ok=True)
                     except OSError as exc:
-                        log.warning("[Timing] Не удалось удалить устаревший монтаж %s: %s; продолжаю пересборку.", stale, exc)
+                        log.warning("[Timing] Не удалось удалить устаревший монтаж %s: %s; продолжаю пересборку.",
+                                    stale, exc)
             state.data["montage"]["done"] = False
             state.data["final"]["done"] = False
             state.data["final"]["subtitles_burned"] = False
@@ -16330,7 +16680,8 @@ async def process_project(
                     try:
                         stale_final.unlink(missing_ok=True)
                     except OSError as exc:
-                        log.warning("[Timing] Не удалось удалить устаревший финал %s: %s; продолжаю пересборку.", stale_final, exc)
+                        log.warning("[Timing] Не удалось удалить устаревший финал %s: %s; продолжаю пересборку.",
+                                    stale_final, exc)
             state.data["final"]["video"] = ""
             log.warning(
                 "🔄 [Timing] Intro изменился %.2fs -> %.2fs; пересобираем визуальный timeline.",
@@ -16360,15 +16711,16 @@ async def process_project(
 
         legacy_timeline = bool(saved_intervals) and not saved_timeline_signature
         timeline_shifted = (
-            legacy_timeline
-            or (
-                saved_timeline_start is not None
-                and abs(saved_timeline_start - intro_duration) > 0.10
-            )
+                legacy_timeline
+                or (
+                        saved_timeline_start is not None
+                        and abs(saved_timeline_start - intro_duration) > 0.10
+                )
         )
 
         semantic_stale = "semantic-v2" not in saved_timeline_signature
-        if saved_intervals and all(x is not None for x in saved_intervals) and not timeline_shifted and not semantic_stale:
+        if saved_intervals and all(
+                x is not None for x in saved_intervals) and not timeline_shifted and not semantic_stale:
             intervals = [x for x in saved_intervals if x is not None]
             log.info(
                 "⏭️ [Resume] Используем сохранённый таймлайн: %s сцен, старт %.2fs",
@@ -16383,14 +16735,19 @@ async def process_project(
             # never increases the number of Flow image requests.
             prior_count = sum(1 for item in saved_intervals if item is not None)
             if prior_count and len(semantic_scenes) != prior_count:
-                semantic_scenes = fit_semantic_scene_count(semantic_scenes, segments, prior_count, intro_duration, audio_duration)
+                semantic_scenes = fit_semantic_scene_count(semantic_scenes, segments, prior_count, intro_duration,
+                                                           audio_duration)
             if prior_count and len(semantic_scenes) != prior_count:
-                log.warning("[Semantic Planning] Не удалось безопасно подогнать границы к прежнему числу сцен (%s); сохраняю прежний таймлайн, чтобы не увеличивать квоты Flow.", prior_count)
+                log.warning(
+                    "[Semantic Planning] Не удалось безопасно подогнать границы к прежнему числу сцен (%s); сохраняю прежний таймлайн, чтобы не увеличивать квоты Flow.",
+                    prior_count)
                 old_records_for_count = state.data.get("main_clips", [])
                 semantic_scenes = [
                     {"start": float(item[0]), "end": float(item[1]),
-                     "scene_break": bool(old_records_for_count[i].get("scene_break", False)) if i < len(old_records_for_count) else False,
-                     "pause_before": float(old_records_for_count[i].get("pause_before", 0.0) or 0.0) if i < len(old_records_for_count) else 0.0}
+                     "scene_break": bool(old_records_for_count[i].get("scene_break", False)) if i < len(
+                         old_records_for_count) else False,
+                     "pause_before": float(old_records_for_count[i].get("pause_before", 0.0) or 0.0) if i < len(
+                         old_records_for_count) else 0.0}
                     for i, item in enumerate(saved_intervals) if item is not None
                 ]
             intervals = [(float(x["start"]), float(x["end"])) for x in semantic_scenes]
@@ -16424,7 +16781,8 @@ async def process_project(
 
         main_clips = []
         segment_texts = []
-        semantic_by_index = semantic_scenes if "semantic_scenes" in locals() and len(semantic_scenes) == len(intervals) else [
+        semantic_by_index = semantic_scenes if "semantic_scenes" in locals() and len(semantic_scenes) == len(
+            intervals) else [
             {"scene_break": bool(existing_records.get(i, {}).get("scene_break", False)),
              "pause_before": float(existing_records.get(i, {}).get("pause_before", 0.0) or 0.0)}
             for i in range(len(intervals))
@@ -16448,7 +16806,8 @@ async def process_project(
                 "transition_dur": 0.0,
                 "pause_before": float(semantic_by_index[idx].get("pause_before", 0.0) or 0.0),
                 "plan": old.get("plan", ""),
-                "prompt": old.get("prompt", "") if old.get("prompt") and is_valid_image(Path(str(old.get("image_path", "")))) else "",
+                "prompt": old.get("prompt", "") if old.get("prompt") and is_valid_image(
+                    Path(str(old.get("image_path", "")))) else "",
                 "image_path": old.get(
                     "image_path",
                     str(state.media_dir / f"scene_{idx + 1:04d}.jpg"),
@@ -16464,7 +16823,8 @@ async def process_project(
                 # A semantic timeline refresh changes timing, not the existing Flow still.
                 # Reuse a valid cached image and only regenerate when the still is missing
                 # or a previous quality/safety checkpoint explicitly requested it.
-                "needs_regeneration": bool(old.get("needs_regeneration", False)) or not is_valid_image(Path(str(old.get("image_path", "")))),
+                "needs_regeneration": bool(old.get("needs_regeneration", False)) or not is_valid_image(
+                    Path(str(old.get("image_path", "")))),
             }
 
             if same_timeline and is_valid_video(Path(record["output_path"])) and not record["needs_regeneration"]:
@@ -16529,16 +16889,19 @@ async def process_project(
         ).hexdigest()
         previous_stage4_signature = str(state.data.get("stage4_signature", "") or "")
         if (
-            state.data.get("stage4_version") != STAGE4_VERSION
-            or previous_stage4_signature != stage4_signature
+                state.data.get("stage4_version") != STAGE4_VERSION
+                or previous_stage4_signature != stage4_signature
         ):
             previous_audio_value = str(state.data.get("montage", {}).get("with_audio", "") or "").strip()
-            previous_with_audio = Path(previous_audio_value) if previous_audio_value else state.work_dir / "video_with_audio.mp4"
+            previous_with_audio = Path(
+                previous_audio_value) if previous_audio_value else state.work_dir / "video_with_audio.mp4"
             if previous_with_audio.is_file():
                 try:
                     previous_with_audio.unlink()
                 except OSError as stage4_exc:
-                    log.warning("[Stage4] Не удалось удалить устаревший аудиомастер; выберу отдельный Stage 4 output: %s", stage4_exc)
+                    log.warning(
+                        "[Stage4] Не удалось удалить устаревший аудиомастер; выберу отдельный Stage 4 output: %s",
+                        stage4_exc)
                     previous_with_audio = state.work_dir / f"video_with_audio_stage4_{stage4_signature[:8]}.mp4"
             state.data.setdefault("montage", {})["with_audio"] = str(previous_with_audio)
             state.data.setdefault("final", {})["done"] = False
@@ -16565,11 +16928,11 @@ async def process_project(
         state.save()
 
         if (
-            intro_timing_changed
-            or timeline_shifted
-            or not state.data.get("scene_plan")
-            or len(state.data["scene_plan"]) != len(segment_texts)
-            or state.data.get("scene_plan_version") != SCENE_PLAN_VERSION
+                intro_timing_changed
+                or timeline_shifted
+                or not state.data.get("scene_plan")
+                or len(state.data["scene_plan"]) != len(segment_texts)
+                or state.data.get("scene_plan_version") != SCENE_PLAN_VERSION
         ):
             old_scene_plan = list(state.data.get("scene_plan", []))
             storyboard_contexts = []
@@ -16631,7 +16994,8 @@ async def process_project(
             for plan_idx, plan_record in enumerate(state.data["main_clips"]):
                 if not plan_record.get("plan") and plan_idx < len(state.data.get("scene_plan", [])):
                     plan_record["plan"] = state.data["scene_plan"][plan_idx]
-            state.data["main_clips"] = assign_main_video_insert_slots(state.data["main_clips"], segments, intro_duration, audio_duration)
+            state.data["main_clips"] = assign_main_video_insert_slots(state.data["main_clips"], segments,
+                                                                      intro_duration, audio_duration)
             state.data["scene_plan"] = [str(x.get("plan", "")) for x in state.data["main_clips"]]
             state.data["video_inserts_assigned"] = True
             state.save()
@@ -16643,7 +17007,8 @@ async def process_project(
         ctx = analysis.get("context", {})
         character_bible_for_refs = analysis.get("character_bible", {})
         known_character_reference_images: list[Path] = []
-        reference_entries = character_bible_for_refs.get("characters", []) if isinstance(character_bible_for_refs, dict) else []
+        reference_entries = character_bible_for_refs.get("characters", []) if isinstance(character_bible_for_refs,
+                                                                                         dict) else []
         for character_entry in reference_entries:
             if not isinstance(character_entry, dict):
                 continue
@@ -16706,7 +17071,8 @@ async def process_project(
         planned_zoom_dirs: list[str] = []
         zoom_history: list[str] = []
         for zoom_idx, zoom_record in enumerate(state.data["main_clips"]):
-            zoom_plan = state.data.get("scene_plan", [])[zoom_idx] if zoom_idx < len(state.data.get("scene_plan", [])) else ""
+            zoom_plan = state.data.get("scene_plan", [])[zoom_idx] if zoom_idx < len(
+                state.data.get("scene_plan", [])) else ""
             zoom_image = Path(str(zoom_record.get("image_path", "")))
             seed_source = f"{zoom_image.name}|{zoom_record.get('prompt', '')}|{zoom_plan or ''}|{zoom_idx}"
             seed = int(hashlib.md5(seed_source.encode("utf-8", errors="ignore")).hexdigest()[:8], 16)
@@ -16725,18 +17091,19 @@ async def process_project(
                     state.save()
                     continue
                 raw_video = state.media_dir / f"scene_{idx + 1:04d}_raw.mp4"
-                scene_plan_video = str(record.get("plan") or (state.data.get("scene_plan", [""])[idx] if idx < len(state.data.get("scene_plan", [])) else ""))
+                scene_plan_video = str(record.get("plan") or (
+                    state.data.get("scene_plan", [""])[idx] if idx < len(state.data.get("scene_plan", [])) else ""))
                 style_lead = visual_style_description("video")
                 video_prompt = (
-                    f"VISUAL MEDIUM FIRST: {style_lead}. "
-                    "Keep this exact visual style strictly from the first frame to the last. "
-                    "No talking head, no lip motion, no dialogue. "
-                    "Show physical movement, atmosphere, travel, nature/weather, or a location change matching ONLY this narration beat; "
-                    "no text, logo or watermark.\n\n"
-                    f"{visual_style_rules('video')}\n\n"
-                    "NARRATION BEAT:\n"
-                    + str(record.get("text", ""))
-                    + (f"\n\nSCENE DIRECTION:\n{scene_plan_video}" if scene_plan_video else "")
+                        f"VISUAL MEDIUM FIRST: {style_lead}. "
+                        "Keep this exact visual style strictly from the first frame to the last. "
+                        "No talking head, no lip motion, no dialogue. "
+                        "Show physical movement, atmosphere, travel, nature/weather, or a location change matching ONLY this narration beat; "
+                        "no text, logo or watermark.\n\n"
+                        f"{visual_style_rules('video')}\n\n"
+                        "NARRATION BEAT:\n"
+                        + str(record.get("text", ""))
+                        + (f"\n\nSCENE DIRECTION:\n{scene_plan_video}" if scene_plan_video else "")
                 )
                 video_prompt = enforce_selected_visual_style(
                     enforce_flow_intro_silent_visual_policy(
@@ -16849,11 +17216,11 @@ async def process_project(
                 )
                 state.save()
             elif is_valid_video(output_path) and (
-                record.get("render_effect_version") == scene_target_render_version
-                # If the depth backend cannot load, don't needlessly re-render
-                # all legacy Ken Burns clips; retry parallax on a later run when
-                # the dependencies/model become available.
-                or (not parallax_available and not record.get("render_effect_version"))
+                    record.get("render_effect_version") == scene_target_render_version
+                    # If the depth backend cannot load, don't needlessly re-render
+                    # all legacy Ken Burns clips; retry parallax on a later run when
+                    # the dependencies/model become available.
+                    or (not parallax_available and not record.get("render_effect_version"))
             ):
                 if existing_quality_issues:
                     log.warning(
@@ -16893,7 +17260,8 @@ async def process_project(
 
             # Автоматический сброс старых видео-промптов в пользу фотореалистичных
             current_prompt = str(record.get("prompt", "")).lower()
-            if any(w in current_prompt for w in ["video shot", "camera movement", "continuous realistic motion", "controlled camera movement"]):
+            if any(w in current_prompt for w in
+                   ["video shot", "camera movement", "continuous realistic motion", "controlled camera movement"]):
                 record["prompt"] = ""
             else:
                 # Older checkpoints may contain identity-lock sections copied from neighboring narration.
@@ -16940,7 +17308,8 @@ async def process_project(
                 next_lower = next_saved_prompt.casefold()
                 stale_prompt = any(
                     marker in next_lower
-                    for marker in ("video shot", "camera movement", "continuous realistic motion", "controlled camera movement")
+                    for marker in
+                    ("video shot", "camera movement", "continuous realistic motion", "controlled camera movement")
                 )
                 next_image = Path(str(next_record.get("image_path", "")))
                 next_needs_image = bool(next_record.get("needs_regeneration")) or not is_valid_image(next_image)
@@ -16981,9 +17350,9 @@ async def process_project(
                 if cast_mode == "NONE":
                     # Do not append the character bible/ref map to an object-only scene.
                     generation_prompt = (
-                        generation_prompt
-                        + "\n\nMANDATORY CAST OVERRIDE — CAST=NONE: no visible people, no protagonist, no human silhouettes or people in the background. "
-                          "Illustrate only the scene's meaningful objects, setting, POV details, or visual metaphor."
+                            generation_prompt
+                            + "\n\nMANDATORY CAST OVERRIDE — CAST=NONE: no visible people, no protagonist, no human silhouettes or people in the background. "
+                              "Illustrate only the scene's meaningful objects, setting, POV details, or visual metaphor."
                     )
                 else:
                     generation_prompt = add_reference_usage_instruction(
@@ -16995,7 +17364,8 @@ async def process_project(
                         idx + 1, cast_mode or "legacy", ", ".join(path.name for path in scene_reference_images),
                     )
                 elif cast_mode:
-                    log.info("[Character Reference] Сцена %s | CAST=%s | эталон героя не прикрепляется.", idx + 1, cast_mode)
+                    log.info("[Character Reference] Сцена %s | CAST=%s | эталон героя не прикрепляется.", idx + 1,
+                             cast_mode)
                 generation_failed = False
                 generation_failure_reason = ""
                 generated_issues: list[str] = []
@@ -17086,7 +17456,8 @@ async def process_project(
                                 f"Scene {idx + 1}: safe replacement image was not generated; stopping before publication"
                             )
                         generated_issues = image_quality_issues(image_path)
-                        second_review = review_image_with_cache(record, image_path, context="Safe replacement scene; non-graphic documentary framing")
+                        second_review = review_image_with_cache(record, image_path,
+                                                                context="Safe replacement scene; non-graphic documentary framing")
                         second_decision = str(second_review.get("decision", "REVIEW")).upper().strip()
                         if second_decision == "REJECT":
                             second_hash = second_review.get("sha256", sha256_file(image_path))
@@ -17103,7 +17474,8 @@ async def process_project(
                                 idx + 1, second_decision, second_review.get("reason", "no reason"),
                             )
                         record["content_safety_retry_count"] = 0
-                        log.info("[Content Safety] Scene %s safe replacement kept (review=%s)", idx + 1, second_decision)
+                        log.info("[Content Safety] Scene %s safe replacement kept (review=%s)", idx + 1,
+                                 second_decision)
                     elif review_decision != "PASS":
                         log.warning(
                             "[Content Safety] Newly generated scene %s review=%s; continuing without a confirmed pass. Reason: %s",
@@ -17283,7 +17655,8 @@ async def process_project(
                     try:
                         stale.unlink(missing_ok=True)
                     except OSError as exc:
-                        log.warning("[Parallax] Не удалось удалить устаревший монтаж %s: %s; продолжаю пересборку.", stale, exc)
+                        log.warning("[Parallax] Не удалось удалить устаревший монтаж %s: %s; продолжаю пересборку.",
+                                    stale, exc)
             state.data["montage"]["done"] = False
             stale_final_value = str(state.data["final"].get("video", "") or "").strip()
             if stale_final_value:
@@ -17292,7 +17665,8 @@ async def process_project(
                     try:
                         stale_final.unlink(missing_ok=True)
                     except OSError as exc:
-                        log.warning("[Parallax] Не удалось удалить устаревший финал %s: %s; продолжаю пересборку.", stale_final, exc)
+                        log.warning("[Parallax] Не удалось удалить устаревший финал %s: %s; продолжаю пересборку.",
+                                    stale_final, exc)
             state.data["final"]["done"] = False
             state.data["final"]["subtitles_burned"] = False
             state.data["final"]["video"] = ""
@@ -17318,7 +17692,8 @@ async def process_project(
             state.data["final"]["done"] = False
             state.data["final"]["subtitles_burned"] = False
             state.save()
-            log.info("🔄 [Переходы] Версия переходов изменилась: перестраиваю только общий монтаж, движение готовых слайдов не меняю.")
+            log.info(
+                "🔄 [Переходы] Версия переходов изменилась: перестраиваю только общий монтаж, движение готовых слайдов не меняю.")
 
         state.set_stage("montage")
         all_parts: list[tuple[Path, float | None]] = []
@@ -17370,16 +17745,16 @@ async def process_project(
                 expected_montage_duration, cached_delta,
             )
             no_audio.unlink(missing_ok=True)
-        
+
         if not cache_is_trusted:
             transition_start_index = (
                 1 if state.data["intro"]["done"] and Path(state.data["intro"]["output"]).exists()
                 else 0
             )
             if not concatenate_videos(
-                all_parts, no_audio, state.work_dir, preserve_audio=False,
-                crossfade_duration=0.0, transition_start_index=transition_start_index,
-                transitions=transition_specs, expected_total=expected_montage_duration,
+                    all_parts, no_audio, state.work_dir, preserve_audio=False,
+                    crossfade_duration=0.0, transition_start_index=transition_start_index,
+                    transitions=transition_specs, expected_total=expected_montage_duration,
             ):
                 raise RuntimeError("Не удалось собрать видеомонтаж из исходных all_parts")
 
@@ -17422,8 +17797,8 @@ async def process_project(
             else:
                 log.info("🎵 [Audio] Фоновая музыка отключена")
             if not add_audio_to_video(
-                no_audio, audio_path, music, with_audio,
-                micro_sfx_times=sfx_events,
+                    no_audio, audio_path, music, with_audio,
+                    micro_sfx_times=sfx_events,
             ):
                 raise RuntimeError("Audio mix failed")
 
@@ -17449,13 +17824,14 @@ async def process_project(
             final_state["title_source_sha256"] = story_source_sha256
             final_state["title_variants_source_sha256"] = story_source_sha256
             state.save()
-            log.info("[Titles] Regenerated title and variants from the current script; source hash=%s", story_source_sha256[:12])
+            log.info("[Titles] Regenerated title and variants from the current script; source hash=%s",
+                     story_source_sha256[:12])
         else:
             title = cached_title
             if (
-                not variants_path.exists()
-                or title_variants_hash != story_source_sha256
-                or title_variants_need_russian_translation(variants_path, project_lang)
+                    not variants_path.exists()
+                    or title_variants_hash != story_source_sha256
+                    or title_variants_need_russian_translation(variants_path, project_lang)
             ):
                 translate_and_paraphrase_title(title, state.work_dir, project_lang)
                 final_state["title_variants_source_sha256"] = story_source_sha256
@@ -17486,9 +17862,9 @@ async def process_project(
 
         # Replace any old title appendix with variants tied to this script hash.
         if (
-            not variants_path.exists()
-            or state.data["final"].get("title_variants_source_sha256") != story_source_sha256
-            or title_variants_need_russian_translation(variants_path, project_lang)
+                not variants_path.exists()
+                or state.data["final"].get("title_variants_source_sha256") != story_source_sha256
+                or title_variants_need_russian_translation(variants_path, project_lang)
         ):
             translate_and_paraphrase_title(title, state.work_dir, project_lang)
             state.data["final"]["title_variants_source_sha256"] = story_source_sha256
@@ -17553,11 +17929,13 @@ async def process_project(
             archive_candidate = stale_title_archive / f"{final_path.stem}_{int(time.time())}{final_path.suffix}"
             try:
                 shutil.move(str(final_path), str(archive_candidate))
-                log.warning("[Titles] Архивировал потенциально старый MP4 с совпавшим именем: %s", archive_candidate.name)
+                log.warning("[Titles] Архивировал потенциально старый MP4 с совпавшим именем: %s",
+                            archive_candidate.name)
             except Exception as exc:
                 log.warning("[Titles] Не удалось архивировать старый MP4 с совпавшим именем: %s", exc)
 
-        subtitles_burned = bool(state.data["final"].get("subtitles_burned", False) and state.data["final"].get("done", False))
+        subtitles_burned = bool(
+            state.data["final"].get("subtitles_burned", False) and state.data["final"].get("done", False))
         if not is_valid_video(final_path) or not subtitles_burned:
             rendered = add_subtitles_to_video(
                 with_audio,
@@ -17589,11 +17967,14 @@ async def process_project(
                 )
             container_issues = audit_mp4_container(final_path)
             if container_issues:
-                log.warning("[MP4 Audit] Найдены UUID-боксы/служебные теги: %s; выполняю один remux.", ", ".join(container_issues))
+                log.warning("[MP4 Audit] Найдены UUID-боксы/служебные теги: %s; выполняю один remux.",
+                            ", ".join(container_issues))
                 remux_temp = final_path.with_name(final_path.stem + ".clean_remux.tmp.mp4")
-                remux_cmd = [FFMPEG_BIN, "-y", "-i", str(final_path), "-map", "0:v:0", "-map", "0:a?", "-c", "copy", *FFMPEG_CLEAN_META_AV, "-movflags", "+faststart", str(remux_temp)]
+                remux_cmd = [FFMPEG_BIN, "-y", "-i", str(final_path), "-map", "0:v:0", "-map", "0:a?", "-c", "copy",
+                             *FFMPEG_CLEAN_META_AV, "-movflags", "+faststart", str(remux_temp)]
                 try:
-                    subprocess.run(remux_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=1800)
+                    subprocess.run(remux_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                   timeout=1800)
                     if not is_valid_video(remux_temp):
                         raise RuntimeError("remux output failed validation")
                     remux_temp.replace(final_path)
@@ -17608,7 +17989,8 @@ async def process_project(
 
         state.data["final"]["video"] = str(final_path)
         state.data["final"]["subtitles"] = str(subtitle_path)
-        state.data["final"]["done"] = is_valid_video(final_path) and bool(state.data["final"].get("subtitles_burned", False))
+        state.data["final"]["done"] = is_valid_video(final_path) and bool(
+            state.data["final"].get("subtitles_burned", False))
         state.save()
 
         # Review the assembled output as well as individual generated scenes and intro clips.
@@ -17652,11 +18034,13 @@ async def process_project(
         existing_thumbnails = state.data.get("thumbnails", [])
         expected_thumbnail_names = {"Preview_Similar_To_Original.jpg", "Thumbnail_Clickable_Story.jpg"}
         thumbnail_manifest_needs_refresh = (
-            not isinstance(existing_thumbnails, list)
-            or len(existing_thumbnails) != 2
-            or {Path(str(item.get("path", ""))).name for item in existing_thumbnails if isinstance(item, dict)} != expected_thumbnail_names
+                not isinstance(existing_thumbnails, list)
+                or len(existing_thumbnails) != 2
+                or {Path(str(item.get("path", ""))).name for item in existing_thumbnails if
+                    isinstance(item, dict)} != expected_thumbnail_names
         )
-        if state.data.get("thumbnail_delivery_version") != THUMBNAIL_DELIVERY_VERSION or thumbnail_manifest_needs_refresh:
+        if state.data.get(
+                "thumbnail_delivery_version") != THUMBNAIL_DELIVERY_VERSION or thumbnail_manifest_needs_refresh:
             # Old thumbnails were generated without the current hero etalon mapping.
             # Remove only the two known generated thumbnail files so they are recreated
             # with the selected hero image; never touch the original preview copy.
@@ -17748,7 +18132,9 @@ async def process_project(
         for thumb in state.data.get("thumbnails", []):
             path = Path(thumb["path"])
             if is_valid_image(path) and ENABLE_YOUTUBE_CONTENT_SAFETY_REVIEW:
-                thumb_review = review_image_with_cache(thumb, path, context=str(state.data.get("final", {}).get("title", "YouTube documentary thumbnail")), cache_field="content_safety_review")
+                thumb_review = review_image_with_cache(thumb, path, context=str(
+                    state.data.get("final", {}).get("title", "YouTube documentary thumbnail")),
+                                                       cache_field="content_safety_review")
                 thumb_decision = str(thumb_review.get("decision", "REVIEW")).upper().strip()
                 if thumb_decision == "PASS":
                     thumb["done"] = True
@@ -17767,7 +18153,8 @@ async def process_project(
                     }
                     state.save()
                     continue
-                log.warning("[Content Safety] Thumbnail %s explicitly rejected: %s. Regenerating neutrally.", path.name, thumb_review.get("reason", "no reason"))
+                log.warning("[Content Safety] Thumbnail %s explicitly rejected: %s. Regenerating neutrally.", path.name,
+                            thumb_review.get("reason", "no reason"))
                 path.unlink(missing_ok=True)
                 thumb["done"] = False
                 thumb["prompt"] = apply_visible_text_language_rule(
@@ -17800,7 +18187,9 @@ async def process_project(
                 raise FlowTechnicalError(f"Thumbnail did not generate as a valid image: {path.name}")
 
             if ENABLE_YOUTUBE_CONTENT_SAFETY_REVIEW:
-                thumb_review = review_image_with_cache(thumb, path, context=str(state.data.get("final", {}).get("title", "YouTube documentary thumbnail")), cache_field="content_safety_review")
+                thumb_review = review_image_with_cache(thumb, path, context=str(
+                    state.data.get("final", {}).get("title", "YouTube documentary thumbnail")),
+                                                       cache_field="content_safety_review")
                 thumb_decision = str(thumb_review.get("decision", "REVIEW")).upper().strip()
                 if thumb_decision == "REJECT":
                     path.unlink(missing_ok=True)
@@ -17827,7 +18216,9 @@ async def process_project(
                     )
                     if not is_valid_image(path):
                         raise FlowTechnicalError(f"Neutral replacement thumbnail was not generated: {path.name}")
-                    thumb_review = review_image_with_cache(thumb, path, context="Neutral, non-graphic documentary thumbnail", cache_field="content_safety_review")
+                    thumb_review = review_image_with_cache(thumb, path,
+                                                           context="Neutral, non-graphic documentary thumbnail",
+                                                           cache_field="content_safety_review")
                     replacement_decision = str(thumb_review.get("decision", "REVIEW")).upper().strip()
                     if replacement_decision == "REJECT":
                         path.unlink(missing_ok=True)
@@ -17880,9 +18271,13 @@ async def process_project(
             if preview_key in seen_preview_paths:
                 continue
             seen_preview_paths.add(preview_key)
-            thumb_record = next((item for item in state.data.get("thumbnails", []) if isinstance(item, dict) and str(item.get("path", "")) and Path(str(item.get("path", ""))).resolve() == preview_path.resolve()), None)
-            is_original_preview = bool(original_preview_value and preview_path.resolve() == Path(original_preview_value).resolve())
-            already_finished = ((is_original_preview and state.data.get("source_preview_finished") is True) or (thumb_record is not None and thumb_record.get("finished") is True))
+            thumb_record = next((item for item in state.data.get("thumbnails", []) if
+                                 isinstance(item, dict) and str(item.get("path", "")) and Path(
+                                     str(item.get("path", ""))).resolve() == preview_path.resolve()), None)
+            is_original_preview = bool(
+                original_preview_value and preview_path.resolve() == Path(original_preview_value).resolve())
+            already_finished = ((is_original_preview and state.data.get("source_preview_finished") is True) or (
+                        thumb_record is not None and thumb_record.get("finished") is True))
             if already_finished and preview_image_has_delivery_size(preview_path):
                 continue
             if not normalize_preview_image_1280x720(preview_path, apply_finishing=not is_original_preview):
@@ -17898,15 +18293,16 @@ async def process_project(
         # Delivery invariant: exactly two generated thumbnails, plus the copied original preview if one existed.
         expected_thumbnail_paths = [Path(str(item.get("path", ""))) for item in state.data.get("thumbnails", [])]
         if (
-            len(expected_thumbnail_paths) != 2
-            or not all(is_valid_image(item) and preview_image_has_delivery_size(item) for item in expected_thumbnail_paths)
+                len(expected_thumbnail_paths) != 2
+                or not all(
+            is_valid_image(item) and preview_image_has_delivery_size(item) for item in expected_thumbnail_paths)
         ):
             raise FlowTechnicalError("Не готовы оба обязательных превью; исходная папка останется для возобновления.")
         if state.data.get("source_preview_delivery"):
             original_delivery_path = Path(str(state.data["source_preview_delivery"]))
             if (
-                not is_valid_image(original_delivery_path)
-                or not preview_image_has_delivery_size(original_delivery_path)
+                    not is_valid_image(original_delivery_path)
+                    or not preview_image_has_delivery_size(original_delivery_path)
             ):
                 raise FlowTechnicalError("Оригинальное превью не подготовлено в формате 1280x720; исходники сохранены.")
         legacy_patterns = (
@@ -17923,7 +18319,8 @@ async def process_project(
                     if resolved_legacy in legacy_seen:
                         continue
                     legacy_seen.add(resolved_legacy)
-                    if legacy_thumb.name in {"Preview_Original.jpg", "Thumbnail_Clickable_Story.jpg", "Preview_Similar_To_Original.jpg"}:
+                    if legacy_thumb.name in {"Preview_Original.jpg", "Thumbnail_Clickable_Story.jpg",
+                                             "Preview_Similar_To_Original.jpg"}:
                         continue
                     legacy_thumb.unlink(missing_ok=True)
                     log.info("[Preview] Удалено устаревшее лишнее превью: %s", legacy_thumb.name)
@@ -18005,13 +18402,13 @@ def print_account_status(manager: FlowAccountManager) -> None:
     print("FLOW ACCOUNT STATUS")
     print("=" * 84)
     for name, state in manager.states.items():
-        pause=""
+        pause = ""
         if state.status == "QUOTA_LIMIT":
-            pause=f" qcheck={max(0, int(state.quota_next_probe_at-time.time()))}s"
+            pause = f" qcheck={max(0, int(state.quota_next_probe_at - time.time()))}s"
         elif state.status == "SUSPICIOUS_ACTIVITY":
-            pause=" until-next-run"
+            pause = " until-next-run"
         elif state.paused_until > time.time():
-            pause=f" pause={int(state.paused_until-time.time())}s"
+            pause = f" pause={int(state.paused_until - time.time())}s"
         usage = manager.round_usage.get(name, {})
         print(
             f"{name:16} status={state.status:12} "
@@ -18024,9 +18421,11 @@ def print_account_status(manager: FlowAccountManager) -> None:
     video_candidates = manager.available_profiles("video")
     image_only = [p["name"] for p in image_candidates if not manager.can_do(p, "video")]
     print("-" * 84)
-    print(f"ДОСТУПНО СЕЙЧАС: images={len(image_candidates)}/{len(manager.profiles)} | videos={len(video_candidates)}/{sum(1 for p in manager.profiles if manager.can_do(p, 'video'))}")
+    print(
+        f"ДОСТУПНО СЕЙЧАС: images={len(image_candidates)}/{len(manager.profiles)} | videos={len(video_candidates)}/{sum(1 for p in manager.profiles if manager.can_do(p, 'video'))}")
     print("Image-only profiles in current queue: " + (", ".join(image_only) if image_only else "none"))
-    print("Профили READY с оставшейся квотой не обязаны запускаться в этом проекте: активный профиль удерживается до 20 изображений или 10 видео.")
+    print(
+        "Профили READY с оставшейся квотой не обязаны запускаться в этом проекте: активный профиль удерживается до 20 изображений или 10 видео.")
     print("=" * 84)
 
 
@@ -18091,7 +18490,8 @@ def save_gui_settings(settings: dict[str, Any]) -> None:
 def infer_initial_language_for_channel(channel_dir: Path) -> str | None:
     try:
         projects = sorted(
-            [item for item in channel_dir.iterdir() if item.is_dir() and not is_reserved_channel_asset_folder(item) and not is_completed_project_folder(item)],
+            [item for item in channel_dir.iterdir() if
+             item.is_dir() and not is_reserved_channel_asset_folder(item) and not is_completed_project_folder(item)],
             key=lambda item: item.stat().st_mtime,
         )
         for project in projects:
@@ -18101,7 +18501,8 @@ def infer_initial_language_for_channel(channel_dir: Path) -> str | None:
             body = extract_script_body(text_files[0].read_text(encoding="utf-8", errors="ignore"))
             inferred = detect_script_language(body)
             if inferred:
-                log.info("[Narration Language] First-run menu default inferred as %s from %s.", inferred.upper(), text_files[0].name)
+                log.info("[Narration Language] First-run menu default inferred as %s from %s.", inferred.upper(),
+                         text_files[0].name)
                 return inferred
     except Exception as exc:
         log.debug("[Narration Language] Could not infer source language for menu defaults: %s", exc)
@@ -18227,7 +18628,8 @@ def run_gui() -> None:
         etalon_dir = INPUT_ROOT / channel / CHANNEL_HERO_REFERENCE_DIR_NAME
         if etalon_dir.is_dir():
             try:
-                if any(p.is_file() and p.suffix.casefold() in SUPPORTED_REFERENCE_IMAGE_SUFFIXES and is_valid_image(p) for p in etalon_dir.iterdir()):
+                if any(p.is_file() and p.suffix.casefold() in SUPPORTED_REFERENCE_IMAGE_SUFFIXES and is_valid_image(p)
+                       for p in etalon_dir.iterdir()):
                     return "comic_explainer"
             except Exception:
                 pass
@@ -18497,32 +18899,38 @@ def cleanup_internal_character_delivery_artifacts(output_channel_dir: Path) -> N
                 stale_bible.unlink()
                 log.info("[Delivery Cleanup] Удалён внутренний файл из старой финальной папки: %s", stale_bible)
             except OSError as exc:
-                log.warning("[Delivery Cleanup] Не удалось удалить старый character_bible.json (%s): %s", stale_bible, exc)
+                log.warning("[Delivery Cleanup] Не удалось удалить старый character_bible.json (%s): %s", stale_bible,
+                            exc)
         stale_refs = delivery_dir / CHARACTER_REFERENCE_DIR_NAME
         if stale_refs.is_dir():
             try:
                 shutil.rmtree(stale_refs)
-                log.info("[Delivery Cleanup] Удалена внутренняя папка эталонов из старой финальной папки: %s", stale_refs)
+                log.info("[Delivery Cleanup] Удалена внутренняя папка эталонов из старой финальной папки: %s",
+                         stale_refs)
             except OSError as exc:
-                log.warning("[Delivery Cleanup] Не удалось удалить старую папку character_references (%s): %s", stale_refs, exc)
+                log.warning("[Delivery Cleanup] Не удалось удалить старую папку character_references (%s): %s",
+                            stale_refs, exc)
 
 
 async def run_pipeline(
-    channel_name: str,
-    project_lang: str,
-    intro_enabled: bool,
-    preferred_profile: str | None = None,
-    visual_style_id: str = "realistic",
-    text_provider: str = "gemini",
+        channel_name: str,
+        project_lang: str,
+        intro_enabled: bool,
+        preferred_profile: str | None = None,
+        visual_style_id: str = "realistic",
+        text_provider: str = "gemini",
 ) -> None:
     global ACTIVE_TTS_CHANNEL_NAME
     ACTIVE_TTS_CHANNEL_NAME = str(channel_name or "").strip()
-    log.info("[TTS Voice] Канал=%s | активный голос=%s", ACTIVE_TTS_CHANNEL_NAME or "(default)", get_channel_tts_voice(ACTIVE_TTS_CHANNEL_NAME))
+    log.info("[TTS Voice] Канал=%s | активный голос=%s", ACTIVE_TTS_CHANNEL_NAME or "(default)",
+             get_channel_tts_voice(ACTIVE_TTS_CHANNEL_NAME))
     selected_text_provider = set_active_text_provider(text_provider)
     if selected_text_provider == "groq" and not GROQ_API_KEYS:
-        raise RuntimeError(f"Groq выбран, но API-ключи не загружены. Проверь {GROQ_KEYS_FILE} или groq_keys.txt рядом со скриптом.")
-    log.info("[Text Provider] Активен %s | model=%s", selected_text_provider.upper(), GROQ_TEXT_MODEL if selected_text_provider == "groq" else "Gemini model router")
-    channel_dir=INPUT_ROOT/channel_name
+        raise RuntimeError(
+            f"Groq выбран, но API-ключи не загружены. Проверь {GROQ_KEYS_FILE} или groq_keys.txt рядом со скриптом.")
+    log.info("[Text Provider] Активен %s | model=%s", selected_text_provider.upper(),
+             GROQ_TEXT_MODEL if selected_text_provider == "groq" else "Gemini model router")
+    channel_dir = INPUT_ROOT / channel_name
     if not channel_dir.exists():
         raise RuntimeError(f"Канал не найден: {channel_dir}")
 
@@ -18563,7 +18971,7 @@ async def run_pipeline(
                 preferred_profile, successor, " -> ".join(configured_names),
             )
 
-    manager=FlowAccountManager(profiles, startup_profile=preferred_profile)
+    manager = FlowAccountManager(profiles, startup_profile=preferred_profile)
     print_account_status(manager)
     log.info(
         "[Flow Rotation] Профиль удерживается до исчерпания квоты текущего типа: "
@@ -18587,8 +18995,8 @@ async def run_pipeline(
         reverse=True,
     )
     if active_project_path and not any(
-        _normalized_project_path(p) == _normalized_project_path(active_project_path)
-        for p in project_folders
+            _normalized_project_path(p) == _normalized_project_path(active_project_path)
+            for p in project_folders
     ):
         # The marker may point to a project that completed/renamed to *_DONE.
         try:
@@ -18596,11 +19004,14 @@ async def run_pipeline(
         except Exception:
             pass
         active_project_path = ""
-    log.info("[Resume Priority] Очередь: сначала активный прерванный проект, затем проекты с существующими медиа/чекпоинтами, затем новые.")
+    log.info(
+        "[Resume Priority] Очередь: сначала активный прерванный проект, затем проекты с существующими медиа/чекпоинтами, затем новые.")
     for queued_folder in project_folders:
         progress_score, progress_reason = project_resume_progress(queued_folder)
-        active_tag = " [ACTIVE RESUME]" if active_project_path and _normalized_project_path(queued_folder) == _normalized_project_path(active_project_path) else ""
-        log.info("[Resume Priority] %s%s | score=%s | %s", queued_folder.name, active_tag, progress_score, progress_reason)
+        active_tag = " [ACTIVE RESUME]" if active_project_path and _normalized_project_path(
+            queued_folder) == _normalized_project_path(active_project_path) else ""
+        log.info("[Resume Priority] %s%s | score=%s | %s", queued_folder.name, active_tag, progress_score,
+                 progress_reason)
     if not project_folders:
         log.info("Нет незавершённых проектов в %s", channel_dir)
         return
@@ -18611,9 +19022,9 @@ async def run_pipeline(
                 # Persist before any work. If Ctrl+C/terminal close happens, next launch
                 # puts this same project first instead of restarting at a fresh folder.
                 save_active_project(folder)
-                print("\n"+"="*72)
-                print("PROJECT:",folder.name)
-                print("="*72)
+                print("\n" + "=" * 72)
+                print("PROJECT:", folder.name)
+                print("=" * 72)
 
                 while True:
                     ok = await process_project(
@@ -18657,8 +19068,8 @@ async def run_pipeline(
                 await manager.active_controller.disconnect(close_chrome=True)
             except Exception:
                 pass
-            manager.active_controller=None
-            manager.active_profile_name=None
+            manager.active_controller = None
+            manager.active_profile_name = None
 
 
 if __name__ == "__main__":
