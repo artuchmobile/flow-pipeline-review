@@ -12726,10 +12726,11 @@ def normalize_clip(
     target_duration: float | None = None,
     preserve_audio: bool = False,
 ) -> None:
-    """Normalize clips but stream-copy an already-compliant FHD video stream.
+    """Re-encode every montage input to a shared CFR/H.264 stream and zero-based PTS.
 
-    This avoids an unnecessary lossy video encode after the native-resolution MiDaS
-    render. Only audio may be re-encoded when the montage requires a uniform audio track.
+    A deterministic video stream contract is more important here than avoiding one
+    additional encode: it prevents intro/main concat seams from inheriting irregular
+    packet timestamps or incompatible MP4 time bases.
     """
     duration_arg = ["-t", f"{target_duration:.3f}"] if target_duration is not None else []
 
@@ -13212,7 +13213,7 @@ def concatenate_videos(
         prefix = [x for x in normalized if x[0] < transition_start_index]
         slides = [x for x in normalized if x[0] >= transition_start_index]
         last_source_index = max((x[0] for x in slides), default=-1)
-        # Merge contiguous hard-cut scenes into one stream-copy file each.
+        # Merge contiguous hard-cut scenes into one deterministic CFR file each.
         runs: list[tuple[Path, float]] = []
         run_transitions: list[dict[str, Any]] = []
         current: list[tuple[int, Path, float]] = []
@@ -13223,7 +13224,7 @@ def concatenate_videos(
                 run_path = current[0][1] if len(current) == 1 else temp_dir / f"{output_path.stem}_cutrun_{len(runs):04d}.mp4"
                 if len(current) > 1:
                     if not _concat_normalized_parts([x[1] for x in current], run_path, temp_dir, preserve_audio=preserve_audio):
-                        raise RuntimeError("stream-copy concat of cut run failed")
+                        raise RuntimeError("CFR re-encode concat of cut run failed")
                     created.append(run_path)
                 runs.append((run_path, sum(x[2] for x in current)))
                 run_transitions.append({"type": boundary["type"], "duration": boundary["duration"]})
@@ -13232,7 +13233,7 @@ def concatenate_videos(
             run_path = current[0][1] if len(current) == 1 else temp_dir / f"{output_path.stem}_cutrun_{len(runs):04d}.mp4"
             if len(current) > 1:
                 if not _concat_normalized_parts([x[1] for x in current], run_path, temp_dir, preserve_audio=preserve_audio):
-                    raise RuntimeError("stream-copy concat of final cut run failed")
+                    raise RuntimeError("CFR re-encode concat of final cut run failed")
                 created.append(run_path)
             runs.append((run_path, sum(x[2] for x in current)))
 
