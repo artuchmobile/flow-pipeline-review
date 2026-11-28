@@ -13000,16 +13000,17 @@ def _run_concat_demuxer_with_fallback(
 
 
 def _concat_normalized_parts(parts: list[Path], output_path: Path, temp_dir: Path, preserve_audio: bool = True) -> bool:
-    """Hard-cut fallback for already normalized parts."""
+    """CFR re-encode hard-cut runs; never packet-copy scene boundaries into the montage clock."""
     if not parts:
         return False
     listing = temp_dir / f"{output_path.stem}_fallback_concat.txt"
     _write_ffconcat_listing(parts, listing)
-    temp = output_path.with_suffix(".fallback-temp.mp4")
     total_duration = sum(get_duration(path) or 0.0 for path in parts)
-    return _run_concat_demuxer_with_fallback(
-        listing, temp, output_path, preserve_audio=preserve_audio,
-        context=output_path.name, duration_hint=total_duration or None,
+    if total_duration <= 0.0:
+        raise RuntimeError(f"[A/V Timing] Cannot determine cut-run duration: {output_path.name}")
+    return _reencode_ffconcat_to_duration(
+        listing, output_path, total_duration, preserve_audio=preserve_audio,
+        context=f"{output_path.name} normalized cut-run",
     )
 
 
@@ -13279,7 +13280,10 @@ def concatenate_videos(
         if not _run_concat_demuxer_with_fallback(
             listing, temp, output_path, preserve_audio=preserve_audio,
             context=output_path.name, duration_hint=target_duration or packet_duration or None,
-            allow_stream_copy=signatures_match,
+            # With more than one file (notably intro + main montage), prefer a
+            # fresh CFR encode even if ffprobe fields happen to match: this resets PTS
+            # at the seam and avoids packet-timestamp discontinuities.
+            allow_stream_copy=signatures_match and len(final_parts) == 1,
         ):
             raise RuntimeError(f"Не удалось собрать {output_path.name}")
         actual_total = get_duration(output_path)
@@ -17305,6 +17309,11 @@ async def process_project(
             stale_with_audio = Path(str(montage_data.get("with_audio", "") or ""))
             if stale_with_audio.is_file():
                 stale_with_audio.unlink(missing_ok=True)
+            montage_data["done"] = False
+            state.data.setdefault("final", {})["done"] = False
+            state.data.setdefault("final", {})["subtitles_burned"] = False
+            state.data.setdefault("final", {})["video"] = ""
+            state.save()
         if no_audio.exists() and not cache_is_trusted:
             log.warning(
                 "[A/V Timing] Rejecting cached video_no_audio.mp4 on Resume | montage.done=%s "
@@ -17314,12 +17323,7 @@ async def process_project(
                 expected_montage_duration, cached_delta,
             )
             no_audio.unlink(missing_ok=True)
-            montage_data["done"] = False
-            state.data.setdefault("final", {})["done"] = False
-            state.data.setdefault("final", {})["subtitles_burned"] = False
-            state.data.setdefault("final", {})["video"] = ""
-            state.save()
-
+        
         if not cache_is_trusted:
             transition_start_index = (
                 1 if state.data["intro"]["done"] and Path(state.data["intro"]["output"]).exists()
