@@ -13615,7 +13615,10 @@ def add_audio_to_video(
             return False
         if not use_music and ENABLE_MICRO_SFX and micro_sfx_times:
             sfx_temp = output_path.with_name(output_path.stem + ".micro_sfx_mix.tmp.mp4")
-            sfx_temp.unlink(missing_ok=True)
+            try:
+                sfx_temp.unlink(missing_ok=True)
+            except OSError as cleanup_exc:
+                log.warning("[SFX] Could not clear stale temporary output; skipping accents: %s", cleanup_exc)
             if apply_micro_sfx_to_video(temp, sfx_temp, micro_sfx_times, video_duration):
                 sfx_temp.replace(temp)
             else:
@@ -13628,9 +13631,22 @@ def add_audio_to_video(
         elapsed = time.monotonic() - started_at
         log.info("[Audio Mix] FFmpeg завершён за %.1f s; проверяю результат %s", elapsed, output_path.name)
         valid = is_valid_video(output_path)
-        if not valid:
-            log.error("[Audio Mix] Итоговый файл не прошёл проверку: %s", output_path)
-        return valid
+        final_duration = get_duration(output_path) if valid else None
+        av_delta = abs(float(final_duration) - float(video_duration)) if final_duration is not None else float("inf")
+        log.info(
+            "[SFX] Final audio/video master A/V Timing=%s | video_clock=%.3fs | muxed_clock=%s | delta=%.3fs",
+            "PASS" if valid and av_delta < 0.25 else "FAIL",
+            video_duration,
+            f"{final_duration:.3f}s" if final_duration is not None else "unknown",
+            av_delta,
+        )
+        if not valid or final_duration is None or av_delta >= 0.25:
+            log.error(
+                "[Audio Mix] Итоговый файл не прошёл проверку/тайминг: valid=%s duration=%s delta=%.3fs path=%s",
+                valid, final_duration, av_delta, output_path,
+            )
+            return False
+        return True
     except subprocess.TimeoutExpired:
         temp_size = 0
         try:
