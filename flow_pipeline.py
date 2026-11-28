@@ -13007,9 +13007,15 @@ def normalize_clip(
     # Always re-encode concat inputs: packet-copy can retain non-zero/irregular PTS
     # and incompatible time bases at the intro/main seam.
 
+    color_metadata_args = [
+        "-color_range", "tv",
+        "-colorspace", "bt709",
+        "-color_primaries", "bt709",
+        "-color_trc", "bt709",
+    ]
     vf = (
         "scale=1920:1080:force_original_aspect_ratio=decrease,"
-        "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,setpts=PTS-STARTPTS"
+        "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,setpts=PTS-STARTPTS,format=yuv420p"
     )
 
     if preserve_audio:
@@ -13034,6 +13040,7 @@ def normalize_clip(
                 "-ac", "2",
                 "-af", "aresample=async=1:first_pts=0",
                 *duration_arg,
+                *color_metadata_args,
                 str(output_path),
             ]
         else:
@@ -13056,6 +13063,7 @@ def normalize_clip(
                 "-ar", "44100",
                 "-ac", "2",
                 "-t", f"{duration:.3f}",
+                *color_metadata_args,
                 str(output_path),
             ]
     else:
@@ -13070,6 +13078,7 @@ def normalize_clip(
             "-b:v", "8000k",
             "-an",
             *duration_arg,
+            *color_metadata_args,
             str(output_path),
         ]
 
@@ -13326,9 +13335,16 @@ def _reencode_ffconcat_to_duration(
         context: str = "concat",
         input_paths: list[Path] | None = None,
 ) -> bool:
-    """Re-encode to a deterministic CFR clock without hiding missing content in a long freeze."""
+    """Re-encode independently decoded inputs through filter_complex concat.
+
+    The concat demuxer can silently stop at MP4 boundaries when H.264 VUI/extradata
+    differs. Each source is therefore opened as a separate input and normalized
+    before the concat filter sees it. Large cut-runs are reduced in <=12-input
+    batches so Windows command lines and decoder memory remain bounded.
+    """
     target = max(0.1, float(expected_duration))
-    source_duration = _sum_ffconcat_input_durations(listing, input_paths)
+    paths = list(input_paths) if input_paths is not None else _parse_ffconcat_input_paths(listing)
+    source_duration = _sum_ffconcat_input_durations(listing, paths)
     if source_duration is None:
         raise RuntimeError(f"[A/V Timing] {context}: cannot determine input duration; refusing duration padding")
     missing = max(0.0, target - source_duration)
@@ -13337,54 +13353,142 @@ def _reencode_ffconcat_to_duration(
             f"[A/V Timing] {context}: source is short by {missing:.3f}s "
             f"(limit {MAX_ALIGNMENT_PAD_SECONDS:.3f}s); rebuild from original all_parts required"
         )
-    pad_duration = min(MAX_ALIGNMENT_PAD_SECONDS, missing)
+
+    path_durations: list[float] = []
+    for path in paths:
+        duration = get_duration(path)
+        if duration is None or float(duration) <= 0.0 or not math.isfinite(float(duration)):
+            raise RuntimeError(
+                f"[A/V Timing] {context}: cannot determine positive duration for input {path}; "
+                "refusing duration padding"
+            )
+        path_durations.append(float(duration))
+
+    ensure_directory(output_path.parent)
     temp_output = output_path.with_name(output_path.stem + ".exact-temp.mp4")
-    video_filter = (
-        f"tpad=stop_mode=clone:stop_duration={pad_duration:.6f},"
-        f"fps={FPS},trim=duration={target:.6f},setpts=PTS-STARTPTS,setsar=1"
-    )
-    audio_args = (
-        ["-map", "0:a:0?", "-af", f"apad,atrim=duration={target:.6f}",
-         "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2"]
-        if preserve_audio else ["-an"]
-    )
+    temp_encode = temp_output.with_name(temp_output.stem + ".encode-temp.mp4")
     encoders = [
         (HW_ENCODER, ["-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", "8000k", "-maxrate", "10000k"]),
         ("libx264", ["-preset", "fast", "-crf", "18"]),
     ]
-    failures: list[str] = []
-    try:
+    color_metadata_args = [
+        "-color_range", "tv",
+        "-colorspace", "bt709",
+        "-color_primaries", "bt709",
+        "-color_trc", "bt709",
+    ]
+
+    def _render_filter_concat_batch(
+            batch_paths: list[Path],
+            batch_durations: list[float],
+            batch_target: float,
+            batch_pad: float,
+            destination: Path,
+            batch_label: str,
+    ) -> None:
+        if not batch_paths or len(batch_paths) != len(batch_durations):
+            raise RuntimeError(f"[A/V Timing] {context}: invalid filter-concat batch {batch_label}")
+        filter_parts: list[str] = []
+        concat_inputs: list[str] = []
+        command: list[str] = [
+            FFMPEG_BIN, "-hide_banner", "-loglevel", "error", "-y",
+            "-filter_complex_threads", "1",
+        ]
+        for input_index, input_path in enumerate(batch_paths):
+            command.extend(["-i", str(input_path)])
+            video_label = f"v{input_index}"
+            filter_parts.append(
+                f"[{input_index}:v:0]fps={FPS},settb=AVTB,setpts=PTS-STARTPTS,"
+                f"format=yuv420p,setsar=1[{video_label}]"
+            )
+            if preserve_audio:
+                audio_label = f"a{input_index}"
+                try:
+                    input_has_audio = has_audio_stream(input_path)
+                except Exception:
+                    input_has_audio = False
+                if input_has_audio:
+                    filter_parts.append(
+                        f"[{input_index}:a:0]aresample=44100,"
+                        f"aformat=sample_fmts=fltp:channel_layouts=stereo,"
+                        f"asetpts=PTS-STARTPTS[{audio_label}]"
+                    )
+                else:
+                    filter_parts.append(
+                        f"anullsrc=r=44100:cl=stereo,atrim=duration={batch_durations[input_index]:.6f},"
+                        f"asetpts=PTS-STARTPTS[{audio_label}]"
+                    )
+                concat_inputs.extend([f"[{video_label}]", f"[{audio_label}]"])
+            else:
+                concat_inputs.append(f"[{video_label}]")
+
+        concat_audio_flag = 1 if preserve_audio else 0
+        filter_parts.append(
+            "".join(concat_inputs)
+            + f"concat=n={len(batch_paths)}:v=1:a={concat_audio_flag}[vcat]"
+            + ("[acat]" if False else "")
+        )
+        # The concat filter emits video first and audio second when a=1.
+        if preserve_audio:
+            filter_parts[-1] = (
+                "".join(concat_inputs)
+                + f"concat=n={len(batch_paths)}:v=1:a=1[vcat][acat]"
+            )
+        filter_parts.append(
+            f"[vcat]tpad=stop_mode=clone:stop_duration={batch_pad:.6f},"
+            f"fps={FPS},trim=duration={batch_target:.6f},setpts=PTS-STARTPTS,"
+            f"setsar=1,format=yuv420p[vout]"
+        )
+        if preserve_audio:
+            filter_parts.append(
+                f"[acat]apad,atrim=duration={batch_target:.6f},"
+                f"asetpts=PTS-STARTPTS[aout]"
+            )
+
+        command.extend(["-filter_complex", ";".join(filter_parts), "-map", "[vout]"])
+        if preserve_audio:
+            command.extend(["-map", "[aout]", "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2"])
+        else:
+            command.append("-an")
+        failures: list[str] = []
         for encoder, encoder_args in encoders:
             try:
-                temp_output.unlink(missing_ok=True)
-                cmd = [
-                    FFMPEG_BIN, "-hide_banner", "-loglevel", "error", "-y",
-                    "-fflags", "+genpts", "-f", "concat", "-safe", "0", "-i", str(listing),
-                    "-map", "0:v:0", *audio_args, "-vf", video_filter,
-                    "-c:v", encoder, *encoder_args, "-pix_fmt", "yuv420p", "-profile:v", "high",
+                temp_batch = destination.with_name(destination.stem + ".batch-temp.mp4")
+                temp_batch.unlink(missing_ok=True)
+                cmd = command + [
+                    "-c:v", encoder, *encoder_args,
+                    "-pix_fmt", "yuv420p", "-profile:v", "high",
+                    *color_metadata_args,
                     "-r", str(FPS), "-video_track_timescale", "15360",
-                    "-t", f"{target:.6f}", "-movflags", "+faststart",
+                    "-t", f"{batch_target:.6f}", "-movflags", "+faststart",
                     *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO),
-                    str(temp_output),
+                    str(temp_batch),
                 ]
                 completed = subprocess.run(
                     cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                    timeout=max(300, int(target * 10)),
+                    timeout=max(300, int(batch_target * 10)),
                 )
-                actual = get_duration(temp_output)
-                delta = abs(float(actual) - target) if actual is not None else float("inf")
-                if is_valid_video(temp_output) and actual is not None and delta < 0.25:
-                    temp_output.replace(output_path)
+                actual_batch = get_duration(temp_batch)
+                batch_delta = (
+                    abs(float(actual_batch) - batch_target)
+                    if actual_batch is not None else float("inf")
+                )
+                if is_valid_video(temp_batch) and actual_batch is not None and batch_delta < 0.25:
+                    temp_batch.replace(destination)
                     log.info(
-                        "[A/V Timing] %s exact re-encode PASS | input=%.3fs target=%.3fs actual=%.3fs "
-                        "delta=%.3fs pad=%.3fs encoder=%s",
-                        context, source_duration, target, actual, delta, pad_duration, encoder,
+                        "[A/V Timing] %s filter-concat batch %s PASS | inputs=%s target=%.3fs "
+                        "actual=%.3fs delta=%.3fs encoder=%s",
+                        context, batch_label, len(batch_paths), batch_target,
+                        actual_batch, batch_delta, encoder,
                     )
-                    return True
-                stderr_text = completed.stderr.decode("utf-8", errors="replace") if isinstance(completed.stderr,
-                                                                                               bytes) else str(
-                    completed.stderr or "")
-                failures.append(f"{encoder}: invalid output or duration delta={delta:.3f}s {stderr_text[-700:]}")
+                    return
+                stderr_text = (
+                    completed.stderr.decode("utf-8", errors="replace")
+                    if isinstance(completed.stderr, bytes) else str(completed.stderr or "")
+                )
+                failures.append(
+                    f"{encoder}: invalid output or duration delta={batch_delta:.3f}s {stderr_text[-700:]}"
+                )
             except Exception as exc:
                 detail = getattr(exc, "stderr", b"")
                 if isinstance(detail, bytes):
@@ -13392,15 +13496,85 @@ def _reencode_ffconcat_to_duration(
                 elif not isinstance(detail, str):
                     detail = str(detail)
                 failures.append(f"{encoder}: {(detail or str(exc))[-1000:]}")
+            finally:
+                temp_batch = destination.with_name(destination.stem + ".batch-temp.mp4")
+                if temp_batch.exists():
+                    temp_batch.unlink(missing_ok=True)
         raise RuntimeError(
-            f"[A/V Timing] {context}: exact re-encode failed; target={target:.3f}s "
-            f"input={source_duration:.3f}s pad_limit={MAX_ALIGNMENT_PAD_SECONDS:.3f}s; "
+            f"[A/V Timing] {context}: filter-concat batch {batch_label} failed; "
             + " | ".join(failures)
         )
+
+    try:
+        current_paths = list(paths)
+        current_durations = list(path_durations)
+        batch_level = 0
+        with tempfile.TemporaryDirectory(
+                prefix=f"{output_path.stem}_concat_",
+                dir=str(output_path.parent),
+        ) as batch_temp_dir:
+            batch_root = Path(batch_temp_dir)
+            # Reduce long cut-runs in bounded groups. Every intermediate is itself
+            # CFR/H.264/BT.709 and becomes a normal input to the next tree level.
+            while len(current_paths) > 12:
+                next_paths: list[Path] = []
+                next_durations: list[float] = []
+                for batch_index, offset in enumerate(range(0, len(current_paths), 12)):
+                    batch_paths = current_paths[offset:offset + 12]
+                    batch_durations = current_durations[offset:offset + 12]
+                    batch_target = sum(batch_durations)
+                    intermediate = batch_root / f"level_{batch_level:02d}_batch_{batch_index:04d}.mp4"
+                    _render_filter_concat_batch(
+                        batch_paths, batch_durations, batch_target, 0.0,
+                        intermediate, f"L{batch_level + 1}B{batch_index + 1}",
+                    )
+                    intermediate_duration = get_duration(intermediate)
+                    if (
+                            intermediate_duration is None
+                            or float(intermediate_duration) <= 0.0
+                            or not math.isfinite(float(intermediate_duration))
+                    ):
+                        raise RuntimeError(
+                            f"[A/V Timing] {context}: cannot probe intermediate batch duration: {intermediate}"
+                        )
+                    next_paths.append(intermediate)
+                    next_durations.append(float(intermediate_duration))
+                current_paths = next_paths
+                current_durations = next_durations
+                batch_level += 1
+
+            effective_source_duration = sum(current_durations)
+            final_missing = max(0.0, target - effective_source_duration)
+            if final_missing > MAX_ALIGNMENT_PAD_SECONDS:
+                raise RuntimeError(
+                    f"[A/V Timing] {context}: batched source is short by {final_missing:.3f}s "
+                    f"(limit {MAX_ALIGNMENT_PAD_SECONDS:.3f}s); refusing duration padding"
+                )
+            final_pad_duration = min(MAX_ALIGNMENT_PAD_SECONDS, final_missing)
+            _render_filter_concat_batch(
+                current_paths, current_durations, target, final_pad_duration,
+                temp_output, "FINAL",
+            )
+            actual = get_duration(temp_output)
+            delta = abs(float(actual) - target) if actual is not None else float("inf")
+            if not is_valid_video(temp_output) or actual is None or delta >= 0.25:
+                raise RuntimeError(
+                    f"[A/V Timing] {context}: final filter-concat duration gate failed; "
+                    f"target={target:.3f}s actual={actual} delta={delta:.3f}s"
+                )
+            temp_output.replace(output_path)
+            log.info(
+                "[A/V Timing] %s exact filter-concat PASS | inputs=%s input=%.3fs "
+                "target=%.3fs actual=%.3fs delta=%.3fs pad=%.3fs batches=%s",
+                context, len(paths), source_duration, target, actual, delta,
+                final_pad_duration, batch_level,
+            )
+            return True
     finally:
         if temp_output.exists():
             temp_output.unlink(missing_ok=True)
-
+        if temp_encode.exists():
+            temp_encode.unlink(missing_ok=True)
 
 def _render_crossfade_group(
         input_paths: list[Path],
@@ -16999,6 +17173,47 @@ async def process_project(
             state.data["scene_plan"] = [str(x.get("plan", "")) for x in state.data["main_clips"]]
             state.data["video_inserts_assigned"] = True
             state.save()
+
+        # Resume repair: every scene must own a distinct output file. Older
+        # checkpoints can contain duplicate output_path values after timeline edits.
+        used_scene_output_paths: dict[str, int] = {}
+        scene_paths_repaired = False
+        for scene_idx, scene_record in enumerate(state.data["main_clips"]):
+            raw_output = str(scene_record.get("output_path", "") or "").strip()
+            current_output = Path(raw_output) if raw_output else (
+                state.media_dir / f"scene_{scene_idx + 1:04d}.mp4"
+            )
+            normalized_output = _normalized_project_path(current_output)
+            if normalized_output in used_scene_output_paths:
+                canonical = state.media_dir / f"scene_{scene_idx + 1:04d}.mp4"
+                candidate = canonical
+                suffix = 1
+                while (
+                        _normalized_project_path(candidate) in used_scene_output_paths
+                        or (candidate.exists() and _normalized_project_path(candidate) != normalized_output)
+                ):
+                    candidate = canonical.with_name(f"{canonical.stem}_resume_{suffix:02d}{canonical.suffix}")
+                    suffix += 1
+                log.warning(
+                    "[Resume Repair] Scene %s shared output_path with scene %s; assigning unique render path %s.",
+                    scene_idx + 1, used_scene_output_paths[normalized_output] + 1, candidate,
+                )
+                scene_record["output_path"] = str(candidate)
+                scene_record["done"] = False
+                scene_record["render_effect_version"] = ""
+                scene_record["needs_regeneration"] = (
+                    bool(scene_record.get("needs_regeneration"))
+                    or not is_valid_image(Path(str(scene_record.get("image_path", ""))))
+                )
+                normalized_output = _normalized_project_path(candidate)
+                scene_paths_repaired = True
+            elif not raw_output:
+                scene_record["output_path"] = str(current_output)
+                scene_paths_repaired = True
+            used_scene_output_paths[normalized_output] = scene_idx
+        if scene_paths_repaired:
+            state.save()
+
         # 6. Flow Images -> Video Clips. Use adaptive 2.5D on every still image:
         # soft depth when visual cues suggest people/animals, full depth on landscapes.
         # Intro/Flow/Veo video files are never passed through this renderer.
@@ -17140,6 +17355,30 @@ async def process_project(
                     output_path.unlink(missing_ok=True)
                     state.save()
             image_path = Path(record["image_path"])
+            if is_valid_video(output_path):
+                expected_scene_duration = float(record.get("duration", 0.0) or 0.0)
+                actual_scene_duration = get_duration(output_path)
+                if (
+                        expected_scene_duration > 0.0
+                        and actual_scene_duration is not None
+                        and abs(float(actual_scene_duration) - expected_scene_duration) > 0.35
+                ):
+                    log.warning(
+                        "[Resume Repair] Scene %s MP4 duration mismatch: expected=%.3fs actual=%.3fs "
+                        "(tolerance=0.350s); rebuilding 2.5D from cached JPG without Flow regeneration.",
+                        idx + 1, expected_scene_duration, float(actual_scene_duration),
+                    )
+                    output_path.unlink(missing_ok=True)
+                    record["done"] = False
+                    record["render_effect_version"] = ""
+                    record["needs_regeneration"] = (
+                        bool(record.get("needs_regeneration")) or not is_valid_image(image_path)
+                    )
+                    record["resume_duration_mismatch"] = {
+                        "expected": round(expected_scene_duration, 3),
+                        "actual": round(float(actual_scene_duration), 3),
+                    }
+                    state.save()
             scene_plan_for_effect = (
                 state.data.get("scene_plan", [])[idx]
                 if idx < len(state.data.get("scene_plan", [])) else ""
