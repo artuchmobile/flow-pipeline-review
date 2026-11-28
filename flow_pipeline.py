@@ -12957,13 +12957,15 @@ def _run_concat_demuxer_with_fallback(
             "-map", "0:v:0", *audio_args,
             "-c:v", HW_ENCODER, "-preset", ENCODER_PRESET,
             "-b:v", "8000k", "-maxrate", "10000k",
-            "-pix_fmt", "yuv420p", "-r", str(FPS), "-movflags", "+faststart",
+            "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360",
+            "-vf", f"fps={FPS},setpts=PTS-STARTPTS,setsar=1", "-r", str(FPS), "-movflags", "+faststart",
             *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO),
         ]),
         ("software-reencode", [
             "-map", "0:v:0", *audio_args,
             "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-            "-pix_fmt", "yuv420p", "-r", str(FPS), "-movflags", "+faststart",
+            "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360",
+            "-vf", f"fps={FPS},setpts=PTS-STARTPTS,setsar=1", "-r", str(FPS), "-movflags", "+faststart",
             *(FFMPEG_CLEAN_META_AV if preserve_audio else FFMPEG_CLEAN_META_VIDEO),
         ]),
     ])
@@ -14520,7 +14522,7 @@ def normalize_intro_clip_duration(path: Path, target_duration: float = FLOW_CLIP
     bitrate = f"{random.randint(*VIDEO_BITRATE_RANGE)}k"
     attempts = [
         [FFMPEG_BIN, "-y", "-i", str(path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target_duration:.3f}", "-r", str(FPS), "-c:v", HW_ENCODER, "-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", bitrate, "-maxrate", "12000k", "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
-        [FFMPEG_BIN, "-y", "-i", str(path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target_duration:.3f}", "-r", str(FPS), "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
+        [FFMPEG_BIN, "-y", "-i", str(path), "-map", "0:v:0", "-an", "-vf", vf, "-t", f"{target_duration:.3f}", "-r", str(FPS), "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", "-profile:v", "high", "-video_track_timescale", "15360", "-movflags", "+faststart", *FFMPEG_CLEAN_META_VIDEO, str(temp)],
     ]
     try:
         last_error = None
@@ -17299,6 +17301,11 @@ async def process_project(
 
         # A file on disk is not a completion checkpoint. If the checkpoint is false
         # or its clock is wrong, discard both montage masters and rebuild from all_parts.
+        if not cache_is_trusted:
+            stale_with_audio = Path(str(montage_data.get("with_audio", "") or ""))
+            if stale_with_audio.is_file():
+                stale_with_audio.unlink(missing_ok=True)
+            montage_data["with_audio"] = str(stale_with_audio) if str(montage_data.get("with_audio", "") or "").strip() else montage_data.get("with_audio", "")
         if no_audio.exists() and not cache_is_trusted:
             log.warning(
                 "[A/V Timing] Rejecting cached video_no_audio.mp4 on Resume | montage.done=%s "
@@ -17308,9 +17315,6 @@ async def process_project(
                 expected_montage_duration, cached_delta,
             )
             no_audio.unlink(missing_ok=True)
-            stale_with_audio = Path(str(montage_data.get("with_audio", "") or ""))
-            if stale_with_audio.is_file():
-                stale_with_audio.unlink(missing_ok=True)
             montage_data["done"] = False
             state.data.setdefault("final", {})["done"] = False
             state.data.setdefault("final", {})["subtitles_burned"] = False
