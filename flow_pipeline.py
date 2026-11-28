@@ -381,6 +381,15 @@ _PARALLAX_FALLBACK_LOGGED = False
 FLOW_INTRO_AUDIO_GAIN = 0.15
 FLOW_INTRO_AUDIO_PEAK_LIMIT = 0.15  # cap the ambience peak at 15% full scale
 ENABLE_BACKGROUND_MUSIC = False
+
+# Stage 4 documentary chapter cards and restrained transition micro-SFX.
+# Micro-SFX are deliberately quiet and only mixed when background music is OFF.
+STAGE4_VERSION = "2026-11-28-stage4-chapters-micro-sfx-v1"
+ENABLE_CHAPTER_TITLE_CARDS = True
+ENABLE_MICRO_SFX = True
+MICRO_SFX_GAIN = 0.035       # linear gain (~-29 dB), intentionally far below narration
+MICRO_SFX_FREQUENCY = 58     # low, soft thump; avoids sharp/high-frequency transients
+MICRO_SFX_DURATION = 0.34    # seconds per accent
 FLOW_VIDEO_AUDIO_POLICY_MARKER = "FLOW VIDEO AUDIO POLICY —"
 FLOW_VIDEO_AUDIO_POLICY = """FLOW VIDEO AUDIO POLICY — Prefer silence or only soft, natural location ambience (quiet wind, leaves, or room tone). No music, speech, singing, whistling, or sharp sound effects."""
 # One bounded recovery path for Flow's audio backend failures. After Gemini rewrites
@@ -13236,11 +13245,276 @@ def prepare_background_music(
     return output
 
 
+
+
+def _chapter_title_for_language(index: int, language: str) -> str:
+    """Return a short, neutral, non-spoiler documentary intertitle in narration language."""
+    lang = str(language or "en").strip().lower().split("-")[0]
+    titles = {
+        "ru": ["Начало истории", "Новый этап", "Смена обстоятельств", "Дальнейший путь", "Важные события", "Следующий поворот"],
+        "en": ["The Beginning", "A New Chapter", "Changing Circumstances", "The Road Ahead", "Key Developments", "Another Turning Point"],
+        "es": ["El comienzo", "Una nueva etapa", "Nuevas circunstancias", "El camino sigue", "Hechos importantes", "Otro giro"],
+        "pl": ["Początek historii", "Nowy etap", "Zmiana okoliczności", "Dalsza droga", "Ważne wydarzenia", "Kolejny zwrot"],
+        "de": ["Der Anfang", "Ein neuer Abschnitt", "Neue Umstände", "Der weitere Weg", "Wichtige Ereignisse", "Eine neue Wendung"],
+        "fr": ["Le début", "Une nouvelle étape", "Nouveaux éléments", "La suite du parcours", "Les faits marquants", "Un autre tournant"],
+        "it": ["L’inizio", "Una nuova fase", "Nuove circostanze", "Il percorso continua", "Fatti importanti", "Un’altra svolta"],
+        "pt": ["O começo", "Uma nova etapa", "Novas circunstâncias", "O caminho adiante", "Fatos importantes", "Outra virada"],
+    }
+    options = titles.get(lang, titles["en"])
+    return options[min(max(0, int(index)), len(options) - 1)]
+
+
+def build_chapter_plan(
+    main_clips: list[dict[str, Any]],
+    audio_duration: float,
+    narration_language: str,
+) -> list[dict[str, Any]]:
+    """Build deterministic, sparse chapter cards from scene breaks and Whisper pause cues."""
+    try:
+        duration = max(0.0, float(audio_duration))
+    except (TypeError, ValueError):
+        return []
+    if duration < 180.0 or len(main_clips) < 3 or not ENABLE_CHAPTER_TITLE_CARDS:
+        return []
+
+    # For 7–15 minute stories, aim for 2–4 cards. Longer stories scale slowly,
+    # while the hard 60s spacing prevents clusters even when many scene_break flags exist.
+    if 420.0 <= duration <= 900.0:
+        target_count = min(4, max(2, int(round(duration / 240.0))))
+    else:
+        target_count = min(6, max(1, int(round(duration / 240.0))))
+
+    candidates: list[dict[str, Any]] = []
+    time_cues = re.compile(
+        r"\b(?:meanwhile|years later|months later|the next day|later that year|"
+        r"meanwhile|in another place|back in|in \d{3,4}|"
+        r"тем временем|на следующий день|через несколько лет|спустя годы|"
+        r"позже в том же году|в другом месте|в \d{3,4}|"
+        r"następnego dnia|kilka lat później|tymczasem|"
+        r"al día siguiente|años después|mientras tanto|"
+        r"am nächsten tag|jahre später|unterdessen)\b",
+        re.IGNORECASE,
+    )
+    for index in range(1, len(main_clips)):
+        scene = main_clips[index] if isinstance(main_clips[index], dict) else {}
+        try:
+            at = float(scene.get("start", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if at < 15.0 or duration - at < 15.0:
+            continue
+        text_value = str(scene.get("text", "") or "")
+        is_break = bool(scene.get("scene_break", False))
+        pause = float(scene.get("pause_before", 0.0) or 0.0)
+        cue = bool(time_cues.search(text_value))
+        if is_break or cue or pause >= 0.8:
+            priority = 0 if is_break else (1 if cue else 2)
+            candidates.append({"time": at, "priority": priority, "scene_index": index})
+
+    # Deterministic fallback: use major scene boundaries nearest evenly spaced
+    # targets if the semantic planner supplied too few explicit breaks/pauses.
+    if len(candidates) < target_count:
+        known = {round(float(item["time"]), 2) for item in candidates}
+        for index in range(1, len(main_clips)):
+            scene = main_clips[index] if isinstance(main_clips[index], dict) else {}
+            try:
+                at = float(scene.get("start", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if 15.0 < at < duration - 15.0 and round(at, 2) not in known:
+                candidates.append({
+                    "time": at,
+                    "priority": 3,
+                    "scene_index": index,
+                })
+    if not candidates:
+        log.info("[Chapters] 0 cards: no eligible scene boundaries")
+        return []
+
+    candidates.sort(key=lambda item: (int(item["priority"]), float(item["time"]), int(item["scene_index"])))
+    selected: list[dict[str, Any]] = []
+    for slot in range(1, target_count + 1):
+        target_time = duration * slot / (target_count + 1)
+        available = [
+            item for item in candidates
+            if all(abs(float(item["time"]) - float(chosen["time"])) >= 60.0 for chosen in selected)
+        ]
+        if not available:
+            break
+        chosen = min(
+            available,
+            key=lambda item: (
+                abs(float(item["time"]) - target_time),
+                int(item["priority"]),
+                float(item["time"]),
+            ),
+        )
+        selected.append(chosen)
+    selected.sort(key=lambda item: float(item["time"]))
+
+    result: list[dict[str, Any]] = []
+    for index, item in enumerate(selected):
+        at = round(float(item["time"]), 3)
+        result.append({
+            "index": index + 1,
+            "start": at,
+            "end": round(min(duration - 1.0, at + 4.2), 3),
+            "text": _chapter_title_for_language(index, narration_language),
+            "scene_index": int(item["scene_index"]),
+            "source": "scene_break" if int(item["priority"]) == 0 else (
+                "time_or_location_cue" if int(item["priority"]) == 1 else (
+                    "whisper_pause" if int(item["priority"]) == 2 else "sparse_fallback"
+                )
+            ),
+        })
+    return result
+
+
+def _ass_timestamp(seconds: float) -> str:
+    value = max(0.0, float(seconds))
+    hours = int(value // 3600)
+    minutes = int((value % 3600) // 60)
+    whole = int(value % 60)
+    centiseconds = int(round((value - int(value)) * 100.0))
+    if centiseconds >= 100:
+        whole += 1
+        centiseconds = 0
+    if whole >= 60:
+        minutes += 1
+        whole = 0
+    if minutes >= 60:
+        hours += 1
+        minutes = 0
+    return f"{hours}:{minutes:02d}:{whole:02d}.{centiseconds:02d}"
+
+
+def _write_chapter_ass_file(path: Path, chapters: list[dict[str, Any]], visual_style_id: str) -> bool:
+    """Write a transparent, top-left ASS overlay so main captions remain unobstructed."""
+    if not chapters:
+        return False
+    comic = str(visual_style_id or "").strip().lower() == "comic_explainer"
+    bold = -1 if comic else 0
+    outline = 4 if comic else 2
+    # ASS colours are AABBGGRR. Top-left placement avoids the lower subtitle safe area.
+    lines = [
+        "[Script Info]",
+        "ScriptType: v4.00+",
+        "WrapStyle: 2",
+        "ScaledBorderAndShadow: yes",
+        "PlayResX: 1920",
+        "PlayResY: 1080",
+        "",
+        "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+        f"Style: Chapter,Roboto Condensed Black,38,&H00FFFFFF,&H000000FF,&HCC080808,&H70000000,{bold},0,0,0,100,100,0,0,3,{outline},1,7,92,100,92,1",
+        "",
+        "[Events]",
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+    ]
+    for chapter in chapters:
+        try:
+            start = float(chapter.get("start", 0.0) or 0.0)
+            end = float(chapter.get("end", start + 4.2) or (start + 4.2))
+            if end <= start:
+                continue
+            label = re.sub(r"\s+", " ", str(chapter.get("text", "") or "")).strip()
+            label = label.replace("{", "").replace("}", "").replace("\\", "").replace("\r", " ").replace("\n", " ")
+            label = label[:100]
+            if not label:
+                continue
+            lines.append(
+                f"Dialogue: 1,{_ass_timestamp(start)},{_ass_timestamp(end)},Chapter,,0,0,0,,{{\\fad(250,400)}}{label}"
+            )
+        except (TypeError, ValueError, AttributeError):
+            continue
+    try:
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8-sig")
+        return path.is_file() and path.stat().st_size > 100
+    except OSError as exc:
+        log.warning("[Chapters] Не удалось записать ASS-плашки: %s", exc)
+        return False
+
+
+def apply_micro_sfx_to_video(
+    input_path: Path,
+    output_path: Path,
+    event_times: list[float],
+    expected_duration: float,
+) -> bool:
+    """Mix a very quiet low-frequency pulse into an already narrated video, without changing its clock."""
+    if not ENABLE_MICRO_SFX or not event_times or not is_valid_video(input_path):
+        return False
+    duration = get_duration(input_path)
+    if duration is None:
+        return False
+    pulse_duration = max(0.20, min(0.60, float(MICRO_SFX_DURATION)))
+    gain = max(0.0, min(0.08, float(MICRO_SFX_GAIN)))
+    frequency = max(35, min(120, int(MICRO_SFX_FREQUENCY)))
+    pulses = []
+    for raw_time in sorted(set(round(float(value), 3) for value in event_times)):
+        if raw_time < 15.0 or duration - raw_time < 15.0:
+            continue
+        end_time = min(duration - 0.02, raw_time + pulse_duration)
+        actual_span = end_time - raw_time
+        if actual_span <= 0.10:
+            continue
+        pulses.append(
+            f"if(between(t,{raw_time:.3f},{end_time:.3f}),"
+            f"sin(PI*(t-{raw_time:.3f})/{actual_span:.3f}),0)"
+        )
+    if not pulses:
+        return False
+    envelope = "+".join(pulses)
+    filter_complex = (
+        f"[1:a]volume='{gain:.5f}*({envelope})',lowpass=f=170,"
+        "alimiter=limit=0.12:level=false[sfx];"
+        "[0:a][sfx]amix=inputs=2:duration=first:normalize=0:dropout_transition=0,"
+        "alimiter=limit=0.95:level=false[a]"
+    )
+    temp = output_path.with_name(output_path.stem + ".tmp.mp4")
+    temp.unlink(missing_ok=True)
+    cmd = [
+        FFMPEG_BIN, "-y", "-i", str(input_path),
+        "-f", "lavfi", "-i",
+        f"sine=frequency={frequency}:sample_rate=44100:duration={duration:.3f}",
+        "-filter_complex", filter_complex,
+        "-map", "0:v:0", "-map", "[a]",
+        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+        "-ar", "44100", "-ac", "2", "-t", f"{duration:.3f}",
+        *FFMPEG_CLEAN_META_AV, str(temp),
+    ]
+    try:
+        subprocess.run(
+            cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            timeout=max(180, int(duration * 2.5)),
+        )
+        actual = get_duration(temp)
+        delta = abs(float(actual) - float(expected_duration)) if actual is not None else float("inf")
+        if not is_valid_video(temp) or actual is None or delta >= 0.25:
+            log.warning(
+                "[SFX] Output rejected: valid=%s duration=%s expected=%.3f delta=%.3f",
+                is_valid_video(temp), actual, expected_duration, delta,
+            )
+            temp.unlink(missing_ok=True)
+            return False
+        temp.replace(output_path)
+        log.info(
+            "[SFX] %s micro-accents mixed | gain=%.4f (%.1f dBFS approx) | A/V Timing=PASS delta=%.3fs",
+            len(pulses), gain, 20.0 * math.log10(max(gain, 1e-8)), delta,
+        )
+        return True
+    except Exception as exc:
+        temp.unlink(missing_ok=True)
+        log.warning("[SFX] Micro-accent mix skipped safely: %s", exc)
+        return False
+
+
 def add_audio_to_video(
     video_path: Path,
     voice_path: Path,
     music_path: Path | None,
     output_path: Path,
+    micro_sfx_times: list[float] | None = None,
 ) -> bool:
     """Mix narration with optional intro ambience/music, using finite audio streams.
 
@@ -13339,6 +13613,17 @@ def add_audio_to_video(
         if not temp.exists() or temp.stat().st_size < 100_000:
             log.error("[Audio Mix] FFmpeg завершился, но временный MP4 отсутствует/слишком мал: %s", temp)
             return False
+        if not use_music and ENABLE_MICRO_SFX and micro_sfx_times:
+            sfx_temp = output_path.with_name(output_path.stem + ".micro_sfx_mix.tmp.mp4")
+            sfx_temp.unlink(missing_ok=True)
+            if apply_micro_sfx_to_video(temp, sfx_temp, micro_sfx_times, video_duration):
+                sfx_temp.replace(temp)
+            else:
+                log.warning("[SFX] Transition accents were not applied; narration/video master remains unchanged.")
+        elif use_music:
+            log.info("[SFX] 0 micro-accents: background music is ON")
+        else:
+            log.info("[SFX] 0 micro-accents: disabled or no eligible fadeblack transitions")
         temp.replace(output_path)
         elapsed = time.monotonic() - started_at
         log.info("[Audio Mix] FFmpeg завершён за %.1f s; проверяю результат %s", elapsed, output_path.name)
@@ -13442,6 +13727,8 @@ def add_subtitles_to_video(
     subtitle_file: Path,
     output_dir: Path,
     video_name: str,
+    chapter_cards: list[dict[str, Any]] | None = None,
+    visual_style_id: str = "realistic",
 ) -> Path | None:
     """Burn captions into the video. A silent copy is never treated as a subtitle success."""
     ensure_directory(output_dir)
@@ -13461,6 +13748,8 @@ def add_subtitles_to_video(
         pass
 
     staged_subtitle: Path | None = None
+    staged_chapters: Path | None = None
+    chapter_ass_path: Path | None = None
     failures: list[str] = []
     try:
         staged_subtitle = _stage_subtitle_file_for_ffmpeg(subtitle_file)
@@ -13474,20 +13763,36 @@ def add_subtitles_to_video(
             "BorderStyle=1,Outline=2,Shadow=1,Bold=0"
         )
         vf = f"subtitles=filename={subtitle_ref}:force_style='{style}'"
+        if chapter_cards:
+            chapter_ass_path = output_dir / f".{video_name}.chapter_cards.ass"
+            if _write_chapter_ass_file(chapter_ass_path, chapter_cards, visual_style_id):
+                staged_chapters = _stage_subtitle_file_for_ffmpeg(chapter_ass_path)
+                chapter_ref = _ffmpeg_filter_quote(str(staged_chapters.resolve()))
+                # Chapter ASS is a second libass layer: top-left placement keeps it clear
+                # of the standard lower-third narration subtitles.
+                vf += f",subtitles=filename={chapter_ref}"
+                log.info(
+                    "[Chapters] Rendering %s cards with preset=%s",
+                    len(chapter_cards), visual_style_id,
+                )
+            else:
+                raise RuntimeError("chapter ASS generation failed")
 
         strategies = [
             (
                 "GPU",
-                ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(video_path),
+                [FFMPEG_BIN, "-y", "-hide_banner", "-loglevel", "error", "-i", str(video_path),
                  "-map", "0:v:0", "-map", "0:a?", "-vf", vf,
                  "-c:v", HW_ENCODER, "-preset", ENCODER_PRESET, "-rc", "vbr", "-b:v", "8000k",
+                 "-pix_fmt", "yuv420p", "-profile:v", "high", "-r", str(FPS), "-video_track_timescale", "15360",
                  "-c:a", "copy", "-movflags", "+faststart", *FFMPEG_CLEAN_META_AV, str(temp_output)],
             ),
             (
                 "CPU",
-                ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(video_path),
+                [FFMPEG_BIN, "-y", "-hide_banner", "-loglevel", "error", "-i", str(video_path),
                  "-map", "0:v:0", "-map", "0:a?", "-vf", vf,
                  "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p",
+                 "-profile:v", "high", "-r", str(FPS), "-video_track_timescale", "15360",
                  "-c:a", "copy", "-movflags", "+faststart", *FFMPEG_CLEAN_META_AV, str(temp_output)],
             ),
         ]
@@ -13524,6 +13829,16 @@ def add_subtitles_to_video(
         if staged_subtitle is not None:
             try:
                 staged_subtitle.unlink(missing_ok=True)
+            except OSError:
+                pass
+        if staged_chapters is not None:
+            try:
+                staged_chapters.unlink(missing_ok=True)
+            except OSError:
+                pass
+        if chapter_ass_path is not None:
+            try:
+                chapter_ass_path.unlink(missing_ok=True)
             except OSError:
                 pass
         try:
@@ -15917,6 +16232,63 @@ async def process_project(
                 scene_record["transition_dur"] = round(random.uniform(0.35, 0.45), 3)
 
         state.data["main_clips"] = main_clips
+
+        chapter_plan = build_chapter_plan(main_clips, audio_duration, project_lang)
+        sfx_events = []
+        for scene_record in main_clips:
+            if str(scene_record.get("transition_out", "cut")).lower() == "fadeblack":
+                try:
+                    boundary = float(scene_record.get("end", 0.0) or 0.0)
+                    transition_duration = float(scene_record.get("transition_dur", 0.0) or 0.0)
+                    event_time = boundary - max(0.0, transition_duration) * 0.5
+                    if 15.0 < event_time < audio_duration - 15.0:
+                        sfx_events.append(round(event_time, 3))
+                except (TypeError, ValueError):
+                    continue
+        stage4_signature_payload = {
+            "timeline": timeline_signature,
+            "chapters": chapter_plan,
+            "sfx_events": sfx_events,
+            "sfx_enabled": bool(ENABLE_MICRO_SFX),
+            "sfx_gain": float(MICRO_SFX_GAIN),
+            "music_enabled": bool(ENABLE_BACKGROUND_MUSIC),
+        }
+        stage4_signature = hashlib.sha256(
+            json.dumps(stage4_signature_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        previous_stage4_signature = str(state.data.get("stage4_signature", "") or "")
+        if (
+            state.data.get("stage4_version") != STAGE4_VERSION
+            or previous_stage4_signature != stage4_signature
+        ):
+            previous_with_audio = Path(str(state.data.get("montage", {}).get("with_audio", "") or ""))
+            if previous_with_audio.is_file():
+                try:
+                    previous_with_audio.unlink()
+                except OSError as stage4_exc:
+                    log.warning("[Stage4] Не удалось удалить устаревший аудиомастер: %s", stage4_exc)
+            state.data.setdefault("montage", {})["with_audio"] = str(state.media_dir / "montage_with_audio.mp4")
+            state.data.setdefault("final", {})["done"] = False
+            state.data.setdefault("final", {})["subtitles_burned"] = False
+            log.info("[Stage4] Версия/план изменились: инвалидирую только аудиомастер и финальный титрованный MP4.")
+        state.data["chapters"] = chapter_plan
+        state.data["chapter_plan_signature"] = stage4_signature
+        state.data["micro_sfx_events"] = sfx_events
+        state.data["stage4_version"] = STAGE4_VERSION
+        state.data["stage4_signature"] = stage4_signature
+        if chapter_plan:
+            log.info(
+                "[Chapters] %s cards planned | %s",
+                len(chapter_plan),
+                " | ".join(f'{item["start"]:.1f}s: {item["text"]}' for item in chapter_plan),
+            )
+        else:
+            log.info("[Chapters] 0 cards planned for this runtime/style")
+        log.info(
+            "[SFX] %s eligible fadeblack accents | enabled=%s | gain=%.4f | background music=%s",
+            len(sfx_events), ENABLE_MICRO_SFX, MICRO_SFX_GAIN,
+            "ON" if ENABLE_BACKGROUND_MUSIC else "OFF",
+        )
         state.save()
 
         if (
@@ -16742,7 +17114,10 @@ async def process_project(
                 )
             else:
                 log.info("🎵 [Audio] Фоновая музыка отключена")
-            if not add_audio_to_video(no_audio, audio_path, music, with_audio):
+            if not add_audio_to_video(
+                no_audio, audio_path, music, with_audio,
+                micro_sfx_times=sfx_events,
+            ):
                 raise RuntimeError("Audio mix failed")
 
         log.info("[Pipeline] Audio mix stage completed; moving to title/preflight stage.")
@@ -16882,6 +17257,8 @@ async def process_project(
                 subtitle_path,
                 final_render_dir,
                 final_name,
+                chapter_cards=chapter_plan,
+                visual_style_id=project_style,
             )
             if rendered is None or not is_valid_video(final_path):
                 state.data["final"]["done"] = False
