@@ -17305,7 +17305,6 @@ async def process_project(
             stale_with_audio = Path(str(montage_data.get("with_audio", "") or ""))
             if stale_with_audio.is_file():
                 stale_with_audio.unlink(missing_ok=True)
-            montage_data["with_audio"] = str(stale_with_audio) if str(montage_data.get("with_audio", "") or "").strip() else montage_data.get("with_audio", "")
         if no_audio.exists() and not cache_is_trusted:
             log.warning(
                 "[A/V Timing] Rejecting cached video_no_audio.mp4 on Resume | montage.done=%s "
