@@ -13613,7 +13613,7 @@ def add_audio_to_video(
         if not temp.exists() or temp.stat().st_size < 100_000:
             log.error("[Audio Mix] FFmpeg завершился, но временный MP4 отсутствует/слишком мал: %s", temp)
             return False
-        if not use_music and ENABLE_MICRO_SFX and micro_sfx_times:
+        if not ENABLE_BACKGROUND_MUSIC and ENABLE_MICRO_SFX and micro_sfx_times:
             sfx_temp = output_path.with_name(output_path.stem + ".micro_sfx_mix.tmp.mp4")
             try:
                 sfx_temp.unlink(missing_ok=True)
@@ -13623,8 +13623,8 @@ def add_audio_to_video(
                 sfx_temp.replace(temp)
             else:
                 log.warning("[SFX] Transition accents were not applied; narration/video master remains unchanged.")
-        elif use_music:
-            log.info("[SFX] 0 micro-accents: background music is ON")
+        elif ENABLE_BACKGROUND_MUSIC:
+            log.info("[SFX] 0 micro-accents: background music is configured ON")
         else:
             log.info("[SFX] 0 micro-accents: disabled or no eligible fadeblack transitions")
         temp.replace(output_path)
